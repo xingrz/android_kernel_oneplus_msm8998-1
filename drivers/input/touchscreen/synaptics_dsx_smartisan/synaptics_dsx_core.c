@@ -1125,6 +1125,11 @@ static int synaptics_rmi4_f11_abs_report(struct synaptics_rmi4_data *rmi4_data,
 
 	mutex_lock(&(rmi4_data->rmi4_report_mutex));
 
+	input_event(rmi4_data->input_dev, EV_SYN, SYN_TIME_SEC,
+			ktime_to_timespec(rmi4_data->timestamp).tv_sec);
+	input_event(rmi4_data->input_dev, EV_SYN, SYN_TIME_NSEC,
+			ktime_to_timespec(rmi4_data->timestamp).tv_nsec);
+
 	for (finger = 0; finger < fingers_supported; finger++) {
 		reg_index = finger / 4;
 		finger_shift = (finger % 4) * 2;
@@ -1344,6 +1349,11 @@ static int synaptics_rmi4_f12_abs_report(struct synaptics_rmi4_data *rmi4_data,
 #endif
 
 	mutex_lock(&(rmi4_data->rmi4_report_mutex));
+
+	input_event(rmi4_data->input_dev, EV_SYN, SYN_TIME_SEC,
+			ktime_to_timespec(rmi4_data->timestamp).tv_sec);
+	input_event(rmi4_data->input_dev, EV_SYN, SYN_TIME_NSEC,
+			ktime_to_timespec(rmi4_data->timestamp).tv_nsec);
 
 	for (finger = 0; finger < fingers_to_process; finger++) {
 		finger_data = data + finger;
@@ -1785,6 +1795,8 @@ static irqreturn_t synaptics_rmi4_irq(int irq, void *data)
 		dev_err(rmi4_data->pdev->dev.parent, "%s irq gpio state is fault, return\n", __func__);
 		goto exit;
 	}
+
+	rmi4_data->timestamp = ktime_get();
 
 	synaptics_rmi4_sensor_report(rmi4_data, true);
 
