@@ -434,3 +434,7 @@ obj-y += msm_sdw/
 ifdef CONFIG_VENDOR_SMARTISAN
 obj-y += snd-soc-max98927.o
 endif
+
+# TODO: remove me b/62058353
+subdir-ccflags-y += \
+	-Wno-enum-conversion
