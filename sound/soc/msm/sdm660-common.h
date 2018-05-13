@@ -17,6 +17,11 @@
 #include <sound/q6afe-v2.h>
 #include "../codecs/wcd-mbhc-v2.h"
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+#define DEFAULT_MCLK_RATE 9600000
+#define NATIVE_MCLK_RATE 11289600
+#endif
+
 #define SAMPLING_RATE_8KHZ      8000
 #define SAMPLING_RATE_11P025KHZ 11025
 #define SAMPLING_RATE_16KHZ     16000
