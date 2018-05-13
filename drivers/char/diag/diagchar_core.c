@@ -2353,6 +2353,21 @@ long diagchar_compat_ioctl(struct file *filp,
 			return -EFAULT;
 		result = diag_ioctl_query_pd_logging(&mode_param);
 		break;
+#ifdef CONFIG_DIAG_CERTIFY
+	case DIAG_IOCTL_COMMAND_CERTIFY:
+		if (!driver->diag_certified) {
+			driver->diag_certified = 1;
+			wake_up_interruptible(&driver->wait_q);
+		}
+		result = 0;
+		break;
+	case DIAG_IOCTL_COMMAND_UNCERTIFY:
+		if (driver->diag_certified) {
+			driver->diag_certified = 0;
+		}
+		result = 0;
+		break;
+#endif
 	}
 	return result;
 }
@@ -2484,6 +2499,21 @@ long diagchar_ioctl(struct file *filp,
 			return -EFAULT;
 		result = diag_ioctl_query_pd_logging(&mode_param);
 		break;
+#ifdef CONFIG_DIAG_CERTIFY
+	case DIAG_IOCTL_COMMAND_CERTIFY:
+		if (!driver->diag_certified) {
+			driver->diag_certified = 1;
+			wake_up_interruptible(&driver->wait_q);
+		}
+		result = 0;
+		break;
+	case DIAG_IOCTL_COMMAND_UNCERTIFY:
+		if (driver->diag_certified) {
+			driver->diag_certified = 0;
+		}
+		result = 0;
+		break;
+#endif
 	}
 	return result;
 }
@@ -3609,6 +3639,9 @@ static int __init diagchar_init(void)
 	driver->supports_sockets = 1;
 	driver->time_sync_enabled = 0;
 	driver->uses_time_api = 0;
+#ifdef CONFIG_DIAG_CERTIFY
+	driver->diag_certified = 0;
+#endif
 	driver->poolsize = poolsize;
 	driver->poolsize_hdlc = poolsize_hdlc;
 	driver->poolsize_dci = poolsize_dci;

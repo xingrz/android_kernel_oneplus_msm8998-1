@@ -945,6 +945,25 @@ int diag_process_apps_pkt(unsigned char *buf, int len,
 	pr_debug("diag: In %s, received cmd %02x %02x %02x\n",
 		 __func__, entry.cmd_code, entry.subsys_id, entry.cmd_code_hi);
 
+#ifdef CONFIG_DIAG_CERTIFY
+	if (!driver->diag_certified) {
+		uint16_t filter_cmd[] = {0x00, 0x0c, 0x3f, 0x7b};
+		int cnt = sizeof(filter_cmd) / sizeof(uint16_t);
+		for (i = 0; i < cnt; i++) {
+			if (entry.cmd_code == filter_cmd[i]) {
+				break;
+			}
+		}
+
+		if (i == cnt) {
+			if (entry.subsys_id != 254) {
+				diag_send_error_rsp(buf, len, info);
+				return 0;
+			}
+		}
+
+	}
+#endif
 	if (*buf == DIAG_CMD_LOG_ON_DMND && driver->log_on_demand_support &&
 	    driver->feature[PERIPHERAL_MODEM].rcvd_feature_mask) {
 		write_len = diag_cmd_log_on_demand(buf, len,
@@ -1571,6 +1590,10 @@ static int diagfwd_mux_write_done(unsigned char *buf, int len, int buf_ctxt,
 
 	switch (type) {
 	case TYPE_DATA:
+#ifdef CONFIG_DIAG_CERTIFY
+		if (!driver->diag_certified)
+			return -EINVAL;
+#endif
 		if (peripheral >= 0 && peripheral < NUM_PERIPHERALS) {
 			diagfwd_write_done(peripheral, type, num);
 			diag_ws_on_copy(DIAG_WS_MUX);

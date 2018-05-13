@@ -401,7 +401,7 @@ static void socket_open_client(struct diag_socket_info *info)
 	if (!info || info->port_type != PORT_TYPE_CLIENT)
 		return;
 
-	ret = sock_create(AF_MSM_IPC, SOCK_DGRAM, 0, &info->hdl);
+	ret = sock_create_kern(&init_net, AF_MSM_IPC, SOCK_DGRAM, 0, &info->hdl);
 	if (ret < 0 || !info->hdl) {
 		pr_err("diag: In %s, socket not initialized for %s\n", __func__,
 		       info->name);
