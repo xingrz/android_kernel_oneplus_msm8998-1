@@ -72,6 +72,9 @@ snd-soc-max98095-objs := max98095.o
 snd-soc-max98357a-objs := max98357a.o
 snd-soc-max98925-objs := max98925.o
 snd-soc-max9850-objs := max9850.o
+ifdef CONFIG_VENDOR_SMARTISAN
+snd-soc-max98927-objs := max98927.o
+endif
 snd-soc-mc13783-objs := mc13783.o
 snd-soc-ml26124-objs := ml26124.o
 snd-soc-hdmi-codec-objs := hdmi.o
@@ -427,3 +430,7 @@ obj-$(CONFIG_SND_SOC_MAX9877)	+= snd-soc-max9877.o
 obj-$(CONFIG_SND_SOC_TPA6130A2)	+= snd-soc-tpa6130a2.o
 obj-y += sdm660_cdc/
 obj-y += msm_sdw/
+
+ifdef CONFIG_VENDOR_SMARTISAN
+obj-y += snd-soc-max98927.o
+endif
