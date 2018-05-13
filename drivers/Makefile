@@ -183,3 +183,7 @@ obj-$(CONFIG_SENSORS_SSC)	+= sensors/
 obj-$(CONFIG_ESOC)              += esoc/
 
 obj-$(CONFIG_FINGERPRINT) += fingerprint/
+
+ifdef CONFIG_VENDOR_SMARTISAN
+obj-y += smartisan/
+endif
