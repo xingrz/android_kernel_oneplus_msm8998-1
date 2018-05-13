@@ -183,3 +183,7 @@ obj-$(CONFIG_BIF)		+= bif/
 
 obj-$(CONFIG_SENSORS_SSC)	+= sensors/
 obj-$(CONFIG_ESOC)              += esoc/
+
+ifdef CONFIG_VENDOR_SMARTISAN
+obj-y += smartisan/
+endif
