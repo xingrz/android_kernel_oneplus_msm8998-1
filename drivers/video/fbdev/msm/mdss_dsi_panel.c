@@ -32,6 +32,15 @@
 
 #define VSYNC_DELAY msecs_to_jiffies(17)
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+extern int sre_mode;
+struct dsi_panel_cmds cabc_moving_mode;
+struct dsi_panel_cmds color_temperature_cmds;
+struct dsi_panel_cmds color_temperature_cmds_reset;
+struct dsi_panel_cmds sre_strong_level;
+struct dsi_panel_cmds sre_exit;
+#endif
+
 DEFINE_LED_TRIGGER(bl_led_trigger);
 
 void mdss_dsi_panel_pwm_cfg(struct mdss_dsi_ctrl_pdata *ctrl)
@@ -240,6 +249,64 @@ static void mdss_dsi_panel_bklt_dcs(struct mdss_dsi_ctrl_pdata *ctrl, int level)
 
 	mdss_dsi_cmdlist_put(ctrl, &cmdreq);
 }
+
+#ifdef CONFIG_VENDOR_SMARTISAN
+extern int is_eye_care_mode;
+extern int glove_open;
+extern void synaptics_rmi4_set_glove_mode(int mode);
+
+void mdss_dsi_panel_ie_level_setting(struct mdss_panel_data *pdata, int level)
+{
+	struct mdss_dsi_ctrl_pdata *ctrl;
+	struct mdss_panel_info *pinfo;
+	struct dsi_panel_cmds *color_temperature_cmd;
+
+	ctrl = container_of(pdata, struct mdss_dsi_ctrl_pdata,
+				panel_data);
+
+	pinfo = &(pdata->panel_info);
+	if (pinfo->dcs_cmd_by_left) {
+		if (ctrl->ndx != DSI_CTRL_LEFT)
+			return;
+	}
+
+	pr_info("%s: level=%d\n", __func__, level);
+	switch (level) {
+	case 10:
+		color_temperature_cmd = &color_temperature_cmds;
+		is_eye_care_mode = 1;
+		mdss_dsi_panel_cmds_send(ctrl, color_temperature_cmd, CMD_REQ_COMMIT);
+		break;
+	case 18:
+		color_temperature_cmd = &color_temperature_cmds_reset;
+		is_eye_care_mode = 0;
+		mdss_dsi_panel_cmds_send(ctrl, color_temperature_cmd, CMD_REQ_COMMIT);
+		break;
+	case 96:
+		sre_mode = level;
+		color_temperature_cmd = &sre_strong_level;
+		mdss_dsi_panel_cmds_send(ctrl, color_temperature_cmd, CMD_REQ_COMMIT);
+		break;
+	case 178:
+		sre_mode = level;
+		color_temperature_cmd = &sre_exit;
+		mdss_dsi_panel_cmds_send(ctrl, color_temperature_cmd, CMD_REQ_COMMIT);
+		break;
+	case 260:
+		glove_open = 0;
+		synaptics_rmi4_set_glove_mode(0);
+		break;
+	case 261:
+		glove_open = 1;
+		synaptics_rmi4_set_glove_mode(1);
+		break;
+	default:
+		break;
+	}
+}
+
+EXPORT_SYMBOL(mdss_dsi_panel_ie_level_setting);
+#endif
 
 static int mdss_dsi_request_gpios(struct mdss_dsi_ctrl_pdata *ctrl_pdata)
 {
@@ -909,6 +976,11 @@ static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 
 	if (on_cmds->cmd_cnt)
 		mdss_dsi_panel_cmds_send(ctrl, on_cmds, CMD_REQ_COMMIT);
+
+#ifdef CONFIG_VENDOR_SMARTISAN
+	if (is_eye_care_mode == 1)
+		mdss_dsi_panel_ie_level_setting(pdata, 10);
+#endif
 
 	if (pinfo->compression_mode == COMPRESSION_DSC)
 		mdss_dsi_panel_dsc_pps_send(ctrl, pinfo);
@@ -2566,6 +2638,23 @@ static int  mdss_dsi_panel_config_res_properties(struct device_node *np,
 	mdss_dsi_parse_dcs_cmds(np, &pt->switch_cmds,
 		"qcom,mdss-dsi-timing-switch-command",
 		"qcom,mdss-dsi-timing-switch-command-state");
+
+#ifdef CONFIG_VENDOR_SMARTISAN
+	mdss_dsi_parse_dcs_cmds(np, &color_temperature_cmds,
+		"qcom,mdss-dsi-panel-color-temperature-command", NULL);
+
+	mdss_dsi_parse_dcs_cmds(np, &color_temperature_cmds_reset,
+		"qcom,mdss-dsi-panel-color-temperature-command-restore", NULL);
+
+	mdss_dsi_parse_dcs_cmds(np, &sre_strong_level,
+		"qcom,mdss-dsi-panel-sre-strong-level", NULL);
+
+	mdss_dsi_parse_dcs_cmds(np, &sre_exit,
+		"qcom,mdss-dsi-panel-sre-exit", NULL);
+
+	mdss_dsi_parse_dcs_cmds(np, &cabc_moving_mode,
+		"qcom,mdss-dsi-panel-cabc-moving-mode", NULL);
+#endif
 
 	rc = mdss_dsi_parse_topology_config(np, pt, panel_data, default_timing);
 	if (rc) {

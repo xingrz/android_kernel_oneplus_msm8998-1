@@ -27,8 +27,14 @@
 #include <linux/msm-bus.h>
 #include <linux/pm_qos.h>
 #include <linux/dma-buf.h>
+#ifdef CONFIG_VENDOR_SMARTISAN
+#include <linux/string.h>
+#endif
 
 #include "mdss.h"
+#ifdef CONFIG_VENDOR_SMARTISAN
+#include "dsi_access.h"
+#endif
 #include "mdss_panel.h"
 #include "mdss_dsi.h"
 #include "mdss_debug.h"
@@ -36,6 +42,14 @@
 #include "mdss_dba_utils.h"
 
 #define CMDLINE_DSI_CTL_NUM_STRING_LEN 2
+
+#ifdef CONFIG_VENDOR_SMARTISAN
+#define LCD_SELECT_GPIO1 62
+#define LCD_SELECT_GPIO2 40
+
+int lcd_id = 0;
+EXPORT_SYMBOL(lcd_id);
+#endif
 
 /* Master structure to hold all the information about the DSI/panel */
 static struct mdss_dsi_data *mdss_dsi_res;
@@ -187,6 +201,250 @@ static void mdss_dsi_pm_qos_update_request(int val)
 
 static int mdss_dsi_pinctrl_set_state(struct mdss_dsi_ctrl_pdata *ctrl_pdata,
 					bool active);
+
+#ifdef CONFIG_VENDOR_SMARTISAN
+#ifdef DSI_ACCESS
+static ssize_t dsi_access_sysfs_read_show(struct device *dev,
+		struct device_attribute *attr, char *buf);
+
+static ssize_t dsi_access_sysfs_read_store(struct device *dev,
+		struct device_attribute *attr,
+		const char *buf, size_t count);
+
+static ssize_t dsi_access_sysfs_write_store(struct device *dev,
+		struct device_attribute *attr,
+		const char *buf, size_t count);
+
+static DEVICE_ATTR(read, (S_IRUGO | S_IWUSR | S_IWGRP),
+		dsi_access_sysfs_read_show, dsi_access_sysfs_read_store);
+
+static DEVICE_ATTR(write, (S_IWUSR | S_IWGRP),
+		NULL, dsi_access_sysfs_write_store);
+
+static struct attribute *dsi_access_attrs[] = {
+	&dev_attr_read.attr,
+	&dev_attr_write.attr,
+	NULL,
+};
+
+struct dsi_access dsi_access;
+
+static struct mdss_dsi_ctrl_pdata *g_ctrl_pdata;
+
+static void dsi_access_parse_input(const char *buf)
+{
+	int retval;
+	int index;
+	char *input;
+	char *token;
+	unsigned long value;
+
+	index = 0;
+	input = (char *)buf;
+
+	while (input != NULL && index < BUFFER_LENGTH) {
+		token = strsep(&input, " ");
+		retval = kstrtoul(token, 16, &value);
+		if (retval < 0) {
+			pr_err("%s: Failed to convert \"%s\" to hex number\n",
+					__func__, token);
+			continue;
+		}
+		dsi_access.cmd_buffer[index] = (unsigned char)value;
+		index++;
+	}
+
+	if (index > 1)
+		dsi_access.cmd_length = index;
+
+	return;
+}
+
+static int dsi_access_send_cmd(struct mdss_dsi_ctrl_pdata *ctrl,
+		struct dsi_panel_cmds *pcmds, enum read_write rw)
+{
+	int retval;
+	struct dcs_cmd_req cmdreq;
+
+	memset(&cmdreq, 0, sizeof(cmdreq));
+	cmdreq.cmds = pcmds->cmds;
+	cmdreq.cmds_cnt = pcmds->cmd_cnt;
+	cmdreq.flags = CMD_REQ_COMMIT | CMD_CLK_CTRL | CMD_REQ_HS_MODE;
+	cmdreq.rlen = 0;
+	cmdreq.cb = NULL;
+
+	if (rw == CMD_READ) {
+		cmdreq.flags |= CMD_REQ_RX;
+		cmdreq.rlen = dsi_access.read_length;
+		cmdreq.rbuf = dsi_access.read_buffer;
+	}
+
+	retval = mdss_dsi_cmdlist_put(ctrl, &cmdreq);
+
+	return retval;
+}
+
+static int dsi_access_do_read(void)
+{
+	int retval;
+	struct dsi_ctrl_hdr *dchdr;
+	struct mdss_dsi_ctrl_pdata *ctrl;
+
+	ctrl = g_ctrl_pdata;
+
+	if (dsi_access.desc_length < 9) {
+		kfree(dsi_access.desc_buffer);
+		dsi_access.desc_buffer = kzalloc(9, GFP_KERNEL);
+		dsi_access.desc_length = 9;
+	}
+
+	if (dsi_access.cmds.cmds == NULL) {
+		dsi_access.cmds.cmds = kzalloc(sizeof(struct dsi_cmd_desc),
+				GFP_KERNEL);
+	}
+
+	dsi_access.desc_buffer[0] = dsi_access.cmd_buffer[0];
+	dsi_access.desc_buffer[1] = 0x01;
+	dsi_access.desc_buffer[2] = 0x00;
+	dsi_access.desc_buffer[3] = 0x00;
+	dsi_access.desc_buffer[4] = 0x00;
+	dsi_access.desc_buffer[5] = 0x00;
+	dsi_access.desc_buffer[6] = 0x00;
+	dsi_access.desc_buffer[7] = dsi_access.cmd_buffer[1];
+	dsi_access.desc_buffer[8] = 0x00;
+
+	dchdr = (struct dsi_ctrl_hdr *)dsi_access.desc_buffer;
+	dchdr->dlen = 2;
+
+	dsi_access.cmds.cmds[0].dchdr = *dchdr;
+	dsi_access.cmds.cmds[0].payload = &dsi_access.desc_buffer[7];
+	dsi_access.cmds.cmd_cnt = 1;
+
+	retval = dsi_access_send_cmd(ctrl, &dsi_access.cmds, CMD_READ);
+	if (retval < 0)
+		return retval;
+
+	return retval;
+}
+
+static int dsi_access_do_write(void)
+{
+	int retval;
+	unsigned int desc_length;
+	struct dsi_ctrl_hdr *dchdr;
+	struct mdss_dsi_ctrl_pdata *ctrl;
+
+	ctrl = g_ctrl_pdata;
+
+	desc_length = sizeof(struct dsi_ctrl_hdr) + dsi_access.cmd_length - 1;
+	if (desc_length > dsi_access.desc_length) {
+		kfree(dsi_access.desc_buffer);
+		dsi_access.desc_buffer = kzalloc(desc_length, GFP_KERNEL);
+		dsi_access.desc_length = desc_length;
+	}
+
+	if (dsi_access.cmds.cmds == NULL) {
+		dsi_access.cmds.cmds = kzalloc(sizeof(struct dsi_cmd_desc),
+				GFP_KERNEL);
+	}
+
+	dsi_access.desc_buffer[0] = dsi_access.cmd_buffer[0];
+	dsi_access.desc_buffer[1] = 0x01;
+	dsi_access.desc_buffer[2] = 0x00;
+	dsi_access.desc_buffer[3] = 0x00;
+	dsi_access.desc_buffer[4] = 0x00;
+	dsi_access.desc_buffer[5] = 0x00;
+	dsi_access.desc_buffer[6] = 0x00;
+	memcpy(&dsi_access.desc_buffer[7], &dsi_access.cmd_buffer[1],
+			dsi_access.cmd_length - 1);
+
+	dchdr = (struct dsi_ctrl_hdr *)dsi_access.desc_buffer;
+	dchdr->dlen = dsi_access.cmd_length - 1;
+
+	dsi_access.cmds.cmds[0].dchdr = *dchdr;
+	dsi_access.cmds.cmds[0].payload = &dsi_access.desc_buffer[7];
+	dsi_access.cmds.cmd_cnt = 1;
+
+	retval = dsi_access_send_cmd(ctrl, &dsi_access.cmds, CMD_WRITE);
+
+	return retval;
+}
+
+static ssize_t dsi_access_sysfs_read_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	unsigned int idx;
+	unsigned int cnt;
+	unsigned int count;
+
+	count = 0;
+
+	for (idx = 0; idx < dsi_access.read_length - 1; idx++) {
+		cnt = snprintf(buf, PAGE_SIZE - count, "%02x ",
+				dsi_access.read_buffer[idx]);
+		buf += cnt;
+		count += cnt;
+	}
+
+	cnt = snprintf(buf, PAGE_SIZE - count, "%02x\n",
+			dsi_access.read_buffer[idx]);
+
+	count += cnt;
+	MDSS_XLOG(0x22222);
+
+	return count;
+}
+
+static ssize_t dsi_access_sysfs_read_store(struct device *dev,
+		struct device_attribute *attr,
+		const char *buf, size_t count)
+{
+	int retval = -EINVAL;
+
+	dsi_access_parse_input(buf);
+
+	if (dsi_access.cmd_length > 2)
+		dsi_access.read_length = dsi_access.cmd_buffer[2];
+	else
+		dsi_access.read_length = 1;
+
+	if (dsi_access.cmd_length > 1) /* data type + command */
+		retval = dsi_access_do_read();
+	else
+		pr_err("%s: No valid command to send\n", __func__);
+
+	dsi_access.cmd_length = 0;
+	MDSS_XLOG(0x1111);
+
+	if (retval < 0)
+		return retval;
+	else
+		return count;
+}
+
+static ssize_t dsi_access_sysfs_write_store(struct device *dev,
+		struct device_attribute *attr,
+		const char *buf, size_t count)
+{
+	int retval = -EINVAL;
+
+	dsi_access_parse_input(buf);
+
+	if (dsi_access.cmd_length > 1) /* data type + command */
+		retval = dsi_access_do_write();
+	else
+		pr_err("%s: No valid command to send\n", __func__);
+
+	dsi_access.cmd_length = 0;
+	MDSS_XLOG(0x44444);
+
+	if (retval < 0)
+		return retval;
+	else
+		return count;
+}
+#endif
+#endif
 
 static struct mdss_dsi_ctrl_pdata *mdss_dsi_get_ctrl(u32 ctrl_id)
 {
@@ -2889,6 +3147,25 @@ static int mdss_dsi_set_override_cfg(char *override_cfg,
 	return 0;
 }
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+static void get_panel_id(void)
+{
+	uint32_t gpio_id1 = 0;
+	uint32_t gpio_id2 = 0;
+	gpio_id1 = gpio_get_value(LCD_SELECT_GPIO1);
+	gpio_id2 = gpio_get_value(LCD_SELECT_GPIO2);
+
+	if ( gpio_id1 == 0 && gpio_id2 == 1)
+		lcd_id = 11;
+	else if ( gpio_id1 == 1 && gpio_id2 == 0)
+		lcd_id = 12;
+	else if ( gpio_id1 == 0 && gpio_id2 == 0)
+		lcd_id = 13;
+	else
+		lcd_id = -1;
+}
+#endif
+
 static struct device_node *mdss_dsi_pref_prim_panel(
 		struct platform_device *pdev)
 {
@@ -2896,10 +3173,31 @@ static struct device_node *mdss_dsi_pref_prim_panel(
 
 	pr_debug("%s:%d: Select primary panel from dt\n",
 					__func__, __LINE__);
+#ifdef CONFIG_VENDOR_SMARTISAN
+	get_panel_id();
+	printk("%s: lcd_id: %d\n", __FUNCTION__, lcd_id);
+
+	if (lcd_id == 11)
+		dsi_pan_node = of_parse_phandle(pdev->dev.of_node,
+						"qcom,dsi-pref-prim-panA", 0);
+	else if (lcd_id == 12)
+		dsi_pan_node = of_parse_phandle(pdev->dev.of_node,
+						"qcom,dsi-pref-prim-panB", 0);
+	else if (lcd_id == 13)
+		dsi_pan_node = of_parse_phandle(pdev->dev.of_node,
+						"qcom,dsi-pref-prim-panC", 0);
+
+	if (!dsi_pan_node) {
+		pr_err("%s:can't find panel phandle\n", __func__);
+		dsi_pan_node = of_parse_phandle(pdev->dev.of_node,
+						"qcom,dsi-pref-prim-panA", 0);
+	}
+#else
 	dsi_pan_node = of_parse_phandle(pdev->dev.of_node,
 					"qcom,dsi-pref-prim-pan", 0);
 	if (!dsi_pan_node)
 		pr_err("%s:can't find panel phandle\n", __func__);
+#endif
 
 	return dsi_pan_node;
 }
@@ -2932,6 +3230,9 @@ static struct device_node *mdss_dsi_find_panel_of_node(
 	struct mdss_panel_info *pinfo = &ctrl_pdata->panel_data.panel_info;
 
 	len = strlen(panel_cfg);
+#ifdef CONFIG_VENDOR_SMARTISAN
+	goto smart_hack;
+#endif
 	ctrl_pdata->panel_data.dsc_cfg_np_name[0] = '\0';
 	if (!len) {
 		/* no panel cfg chg, parse dt */
@@ -3028,6 +3329,11 @@ end:
 		dsi_pan_node = mdss_dsi_pref_prim_panel(pdev);
 exit:
 	return dsi_pan_node;
+#ifdef CONFIG_VENDOR_SMARTISAN
+smart_hack:
+	dsi_pan_node = mdss_dsi_pref_prim_panel(pdev);
+	return dsi_pan_node;
+#endif
 }
 
 static struct device_node *mdss_dsi_config_panel(struct platform_device *pdev,
@@ -4494,6 +4800,17 @@ int dsi_panel_device_register(struct platform_device *ctrl_pdev,
 
 	panel_debug_register_base("panel",
 		ctrl_pdata->ctrl_base, ctrl_pdata->reg_size);
+
+#ifdef CONFIG_VENDOR_SMARTISAN
+#ifdef DSI_ACCESS
+	if (pinfo->pdest == DISPLAY_1) {
+		dsi_access.attr_group.attrs = dsi_access_attrs;
+		g_ctrl_pdata = ctrl_pdata;
+	} else {
+		g_ctrl_pdata = ctrl_pdata;
+	}
+#endif
+#endif
 
 	pr_debug("%s: Panel data initialized\n", __func__);
 	return 0;

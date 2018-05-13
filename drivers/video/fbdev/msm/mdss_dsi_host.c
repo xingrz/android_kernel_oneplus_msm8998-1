@@ -2480,8 +2480,13 @@ void mdss_dsi_wait4video_done(struct mdss_dsi_ctrl_pdata *ctrl)
 	MIPI_OUTP((ctrl->ctrl_base) + 0x0110, data);
 	wmb(); /* ensure interrupt is enabled */
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+	wait_for_completion_timeout(&ctrl->video_comp,
+			msecs_to_jiffies(VSYNC_PERIOD * 13));
+#else
 	wait_for_completion_timeout(&ctrl->video_comp,
 			msecs_to_jiffies(VSYNC_PERIOD * 4));
+#endif
 
 	data = MIPI_INP((ctrl->ctrl_base) + 0x0110);
 	data &= DSI_INTR_TOTAL_MASK;
