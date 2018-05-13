@@ -2218,6 +2218,14 @@
 };
 
 &pm660l_gpios {
+	gpio@c500 {
+		status = "okay";
+		qcom,mode = <0>;
+		qcom,pull = <0>;
+		qcom,vin-sel = <0>;
+		qcom,src-sel = <0>;
+		qcom,out-strength = <1>;
+	};
 	/* GPIO 7 for VOL_UP */
 	gpio@c600 {
 		status = "okay";
@@ -2238,30 +2246,6 @@
 		pinctrl-0 = <&gpio_key_active>;
 		pinctrl-1 = <&gpio_key_suspend>;
 
-		camera_focus {
-			label = "camera_focus";
-			gpios = <&tlmm 64 0x1>;
-			linux,input-type = <1>;
-			linux,code = <0x210>;
-			debounce-interval = <15>;
-		};
-
-		camera_snapshot {
-			label = "camera_snapshot";
-			gpios = <&tlmm 113 0x1>;
-			linux,input-type = <1>;
-			linux,code = <0x2fe>;
-			debounce-interval = <15>;
-		};
-
-		vol_up {
-			label = "volume_up";
-			gpios = <&pm660l_gpios 7 0x1>;
-			linux,input-type = <1>;
-			linux,code = <115>;
-			gpio-key,wakeup;
-			debounce-interval = <15>;
-		};
 	};
 
 	devfreq_spdm_cpu {
@@ -2269,3 +2253,5 @@
 		qcom,max-vote = <6750>;
 	};
 };
+
+#include "oscar-fingerprint.dtsi"
