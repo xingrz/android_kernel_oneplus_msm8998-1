@@ -37,6 +37,14 @@
 
 #define CMDLINE_DSI_CTL_NUM_STRING_LEN 2
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+#define LCD_SELECT_GPIO1 62
+#define LCD_SELECT_GPIO2 40
+
+int lcd_id = 0;
+EXPORT_SYMBOL(lcd_id);
+#endif
+
 /* Master structure to hold all the information about the DSI/panel */
 static struct mdss_dsi_data *mdss_dsi_res;
 
@@ -2891,6 +2899,25 @@ static int mdss_dsi_set_override_cfg(char *override_cfg,
 	return 0;
 }
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+static void get_panel_id(void)
+{
+	uint32_t gpio_id1 = 0;
+	uint32_t gpio_id2 = 0;
+	gpio_id1 = gpio_get_value(LCD_SELECT_GPIO1);
+	gpio_id2 = gpio_get_value(LCD_SELECT_GPIO2);
+
+	if (gpio_id1 == 0 && gpio_id2 == 1)
+		lcd_id = 11;
+	else if (gpio_id1 == 1 && gpio_id2 == 0)
+		lcd_id = 12;
+	else if (gpio_id1 == 0 && gpio_id2 == 0)
+		lcd_id = 13;
+	else
+		lcd_id = -1;
+}
+#endif
+
 static struct device_node *mdss_dsi_pref_prim_panel(
 		struct platform_device *pdev)
 {
@@ -2898,10 +2925,31 @@ static struct device_node *mdss_dsi_pref_prim_panel(
 
 	pr_debug("%s:%d: Select primary panel from dt\n",
 					__func__, __LINE__);
+#ifdef CONFIG_VENDOR_SMARTISAN
+	get_panel_id();
+	printk("%s: lcd_id: %d\n", __FUNCTION__, lcd_id);
+
+	if (lcd_id == 11)
+		dsi_pan_node = of_parse_phandle(pdev->dev.of_node,
+						"qcom,dsi-pref-prim-panA", 0);
+	else if (lcd_id == 12)
+		dsi_pan_node = of_parse_phandle(pdev->dev.of_node,
+						"qcom,dsi-pref-prim-panB", 0);
+	else if (lcd_id == 13)
+		dsi_pan_node = of_parse_phandle(pdev->dev.of_node,
+						"qcom,dsi-pref-prim-panC", 0);
+
+	if (!dsi_pan_node) {
+		pr_err("%s:can't find panel phandle\n", __func__);
+		dsi_pan_node = of_parse_phandle(pdev->dev.of_node,
+						"qcom,dsi-pref-prim-panA", 0);
+	}
+#else
 	dsi_pan_node = of_parse_phandle(pdev->dev.of_node,
 					"qcom,dsi-pref-prim-pan", 0);
 	if (!dsi_pan_node)
 		pr_err("%s:can't find panel phandle\n", __func__);
+#endif
 
 	return dsi_pan_node;
 }
