@@ -151,6 +151,9 @@ static const char *const int_mi2s_tx_ch_text[] = {"One", "Two",
 static char const *bit_format_text[] = {"S16_LE", "S24_LE", "S24_3LE"};
 static const char *const loopback_mclk_text[] = {"DISABLE", "ENABLE"};
 static char const *bt_sample_rate_text[] = {"KHZ_8", "KHZ_16", "KHZ_48"};
+#ifdef CONFIG_VENDOR_SMARTISAN
+static char const *switch_to_audio_text[] = {"USB", "AUDIO"};
+#endif
 
 static SOC_ENUM_SINGLE_EXT_DECL(int0_mi2s_rx_sample_rate, int_mi2s_rate_text);
 static SOC_ENUM_SINGLE_EXT_DECL(int0_mi2s_rx_chs, int_mi2s_ch_text);
@@ -167,9 +170,14 @@ static SOC_ENUM_SINGLE_EXT_DECL(int4_mi2s_rx_format, bit_format_text);
 static SOC_ENUM_SINGLE_EXT_DECL(int5_mi2s_tx_chs, int_mi2s_ch_text);
 static SOC_ENUM_SINGLE_EXT_DECL(loopback_mclk_en, loopback_mclk_text);
 static SOC_ENUM_SINGLE_EXT_DECL(bt_sample_rate, bt_sample_rate_text);
+#ifdef CONFIG_VENDOR_SMARTISAN
+static SOC_ENUM_SINGLE_EXT_DECL(switch_to_audio, switch_to_audio_text);
+#endif
 
+#ifndef CONFIG_VENDOR_SMARTISAN
 static int msm_dmic_event(struct snd_soc_dapm_widget *w,
 			  struct snd_kcontrol *kcontrol, int event);
+#endif
 static int msm_int_enable_dig_cdc_clk(struct snd_soc_codec *codec, int enable,
 				      bool dapm);
 static int msm_int_mclk0_event(struct snd_soc_dapm_widget *w,
@@ -177,7 +185,11 @@ static int msm_int_mclk0_event(struct snd_soc_dapm_widget *w,
 static int msm_int_mi2s_snd_startup(struct snd_pcm_substream *substream);
 static void msm_int_mi2s_snd_shutdown(struct snd_pcm_substream *substream);
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+struct wcd_mbhc_config *mbhc_cfg_ptr;
+#else
 static struct wcd_mbhc_config *mbhc_cfg_ptr;
+#endif
 static struct snd_info_entry *codec_root;
 
 static int int_mi2s_get_bit_format_val(int bit_format)
@@ -440,10 +452,12 @@ static const struct snd_soc_dapm_widget msm_int_dapm_widgets[] = {
 	SND_SOC_DAPM_MIC("Handset Mic", NULL),
 	SND_SOC_DAPM_MIC("Headset Mic", NULL),
 	SND_SOC_DAPM_MIC("Secondary Mic", NULL),
+#ifndef CONFIG_VENDOR_SMARTISAN
 	SND_SOC_DAPM_MIC("Digital Mic1", msm_dmic_event),
 	SND_SOC_DAPM_MIC("Digital Mic2", msm_dmic_event),
 	SND_SOC_DAPM_MIC("Digital Mic3", msm_dmic_event),
 	SND_SOC_DAPM_MIC("Digital Mic4", msm_dmic_event),
+#endif
 };
 
 static int msm_config_hph_compander_gpio(bool enable,
@@ -875,6 +889,38 @@ static int msm_bt_sample_rate_put(struct snd_kcontrol *kcontrol,
 	return 0;
 }
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+extern bool get_switch_stat(void);
+static int switch_to_audio_get(struct snd_kcontrol *kcontrol,
+				  struct snd_ctl_elem_value *ucontrol)
+{
+	bool current_stat;
+
+	// 0 for sleep(usb), 1 for active(audio)
+	current_stat = get_switch_stat();
+	ucontrol->value.integer.value[0] = current_stat;
+
+	pr_info("%s: current_stat %s\n", __func__,
+		 current_stat ? "AUDIO" : "USB");
+
+	return 0;
+}
+
+extern int set_switch_to_audio(bool audio);
+static int switch_to_audio_put(struct snd_kcontrol *kcontrol,
+				  struct snd_ctl_elem_value *ucontrol)
+{
+	bool audio = !!ucontrol->value.integer.value[0];
+	int rc = 0;
+
+	rc = set_switch_to_audio(audio);
+	pr_info("%s: switch to %s, rc: %d\n",
+		 __func__, audio ? "AUDIO" : "USB", rc);
+
+	return rc;
+}
+#endif
+
 static const struct snd_kcontrol_new msm_snd_controls[] = {
 	SOC_ENUM_EXT("INT0_MI2S_RX Format", int0_mi2s_rx_format,
 		     int_mi2s_bit_format_get, int_mi2s_bit_format_put),
@@ -902,6 +948,11 @@ static const struct snd_kcontrol_new msm_snd_controls[] = {
 	SOC_ENUM_EXT("BT SampleRate", bt_sample_rate,
 			msm_bt_sample_rate_get,
 			msm_bt_sample_rate_put),
+#ifdef CONFIG_VENDOR_SMARTISAN
+	SOC_ENUM_EXT("SWITCH_TO_AUDIO", switch_to_audio,
+			switch_to_audio_get,
+			switch_to_audio_put),
+#endif
 };
 
 static const struct snd_kcontrol_new msm_sdw_controls[] = {
@@ -916,6 +967,7 @@ static const struct snd_kcontrol_new msm_sdw_controls[] = {
 		     msm_vi_feed_tx_ch_get, msm_vi_feed_tx_ch_put),
 };
 
+#ifndef CONFIG_VENDOR_SMARTISAN
 static int msm_dmic_event(struct snd_soc_dapm_widget *w,
 			  struct snd_kcontrol *kcontrol, int event)
 {
@@ -948,6 +1000,7 @@ static int msm_dmic_event(struct snd_soc_dapm_widget *w,
 	}
 	return 0;
 }
+#endif
 
 static int msm_int_mclk0_event(struct snd_soc_dapm_widget *w,
 			       struct snd_kcontrol *kcontrol, int event)
@@ -1197,8 +1250,13 @@ static void *def_msm_int_wcd_mbhc_cal(void)
 	if (!msm_int_wcd_cal)
 		return NULL;
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+#define S(X, Y) ((WCD_MBHC_CAL_PLUG_TYPE_PTR(msm_int_wcd_cal)->X) = (Y))
+	S(v_hs_max, 1700);
+#else
 #define S(X, Y) ((WCD_MBHC_CAL_PLUG_TYPE_PTR(msm_int_wcd_cal)->X) = (Y))
 	S(v_hs_max, 1500);
+#endif
 #undef S
 #define S(X, Y) ((WCD_MBHC_CAL_BTN_DET_PTR(msm_int_wcd_cal)->X) = (Y))
 	S(num_btn, WCD_MBHC_DEF_BUTTONS);
@@ -1221,6 +1279,18 @@ static void *def_msm_int_wcd_mbhc_cal(void)
 	 * 210-290 == Button 2
 	 * 360-680 == Button 3
 	 */
+#ifdef CONFIG_VENDOR_SMARTISAN
+	btn_low[0] = 75;
+	btn_high[0] = 75;
+	btn_low[1] = 225;
+	btn_high[1] = 225;
+	btn_low[2] = 425;
+	btn_high[2] = 425;
+	btn_low[3] = 625;
+	btn_high[3] = 625;
+	btn_low[4] = 625;
+	btn_high[4] = 625;
+#else
 	btn_low[0] = 75;
 	btn_high[0] = 75;
 	btn_low[1] = 150;
@@ -1231,6 +1301,7 @@ static void *def_msm_int_wcd_mbhc_cal(void)
 	btn_high[3] = 450;
 	btn_low[4] = 500;
 	btn_high[4] = 500;
+#endif
 
 	return msm_int_wcd_cal;
 }
@@ -1268,8 +1339,10 @@ static int msm_audrx_init(struct snd_soc_pcm_runtime *rtd)
 	snd_soc_dapm_ignore_suspend(dapm, "Handset Mic");
 	snd_soc_dapm_ignore_suspend(dapm, "Headset Mic");
 	snd_soc_dapm_ignore_suspend(dapm, "Secondary Mic");
+#ifndef CONFIG_VENDOR_SMARTISAN
 	snd_soc_dapm_ignore_suspend(dapm, "Digital Mic1");
 	snd_soc_dapm_ignore_suspend(dapm, "Digital Mic2");
+#endif
 
 	snd_soc_dapm_ignore_suspend(dapm, "EAR");
 	snd_soc_dapm_ignore_suspend(dapm, "HEADPHONE");
@@ -1277,10 +1350,12 @@ static int msm_audrx_init(struct snd_soc_pcm_runtime *rtd)
 	snd_soc_dapm_ignore_suspend(dapm, "AMIC1");
 	snd_soc_dapm_ignore_suspend(dapm, "AMIC2");
 	snd_soc_dapm_ignore_suspend(dapm, "AMIC3");
+#ifndef CONFIG_VENDOR_SMARTISAN
 	snd_soc_dapm_ignore_suspend(dapm, "DMIC1");
 	snd_soc_dapm_ignore_suspend(dapm, "DMIC2");
 	snd_soc_dapm_ignore_suspend(dapm, "DMIC3");
 	snd_soc_dapm_ignore_suspend(dapm, "DMIC4");
+#endif
 
 	snd_soc_dapm_sync(dapm);
 
@@ -2311,6 +2386,29 @@ static struct snd_soc_dai_link msm_int_wsa_dai[] = {
 	},
 };
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+//Add for maxim dsm
+static struct snd_soc_dai_link maxim_fe_dai[] = {
+	{/* hw:x,40 */
+		.name = "Secondary MI2S_TX Hostless",
+		.stream_name = "Secondary MI2S_TX Hostless",
+		.cpu_dai_name = "SEC_MI2S_TX_HOSTLESS",
+		.platform_name	= "msm-pcm-hostless",
+		.dynamic = 1,
+		.dpcm_capture = 1,
+		.trigger = {SND_SOC_DPCM_TRIGGER_POST,
+			SND_SOC_DPCM_TRIGGER_POST},
+		.no_host_mode = SND_SOC_DAI_LINK_NO_HOST,
+		.ignore_suspend = 1,
+		 /* this dailink has playback support */
+		.ignore_pmdown_time = 1,
+		/* This dainlink has MI2S support */
+		.codec_dai_name = "snd-soc-dummy-dai",
+		.codec_name = "snd-soc-dummy",
+	},
+};
+#endif
+
 static struct snd_soc_dai_link msm_int_be_dai[] = {
 	/* Backend I2S DAI Links */
 	{
@@ -2622,8 +2720,13 @@ static struct snd_soc_dai_link msm_mi2s_be_dai_links[] = {
 		.stream_name = "Secondary MI2S Playback",
 		.cpu_dai_name = "msm-dai-q6-mi2s.1",
 		.platform_name = "msm-pcm-routing",
+#ifdef CONFIG_VENDOR_SMARTISAN
+		.codec_name = "max98927-codec",
+		.codec_dai_name = "max98927-aif1",
+#else
 		.codec_name = "msm-stub-codec.1",
 		.codec_dai_name = "msm-stub-rx",
+#endif
 		.no_pcm = 1,
 		.dpcm_playback = 1,
 		.be_id = MSM_BACKEND_DAI_SECONDARY_MI2S_RX,
@@ -2637,8 +2740,13 @@ static struct snd_soc_dai_link msm_mi2s_be_dai_links[] = {
 		.stream_name = "Secondary MI2S Capture",
 		.cpu_dai_name = "msm-dai-q6-mi2s.1",
 		.platform_name = "msm-pcm-routing",
+#ifdef CONFIG_VENDOR_SMARTISAN
+		.codec_name = "max98927-codec",
+		.codec_dai_name = "max98927-aif1",
+#else
 		.codec_name = "msm-stub-codec.1",
 		.codec_dai_name = "msm-stub-tx",
+#endif
 		.no_pcm = 1,
 		.dpcm_capture = 1,
 		.be_id = MSM_BACKEND_DAI_SECONDARY_MI2S_TX,
@@ -2930,6 +3038,9 @@ ARRAY_SIZE(msm_mi2s_be_dai_links) +
 ARRAY_SIZE(msm_auxpcm_be_dai_links)+
 ARRAY_SIZE(msm_wcn_be_dai_links) +
 ARRAY_SIZE(msm_wsa_be_dai_links) +
+#ifdef CONFIG_VENDOR_SMARTISAN
+ARRAY_SIZE(maxim_fe_dai) +
+#endif
 ARRAY_SIZE(ext_disp_be_dai_link)];
 
 static struct snd_soc_card sdm660_card = {
@@ -3003,6 +3114,10 @@ static struct snd_soc_card *msm_int_populate_sndcard_dailinks(
 		       sizeof(msm_int_wsa_dai));
 		len1 += ARRAY_SIZE(msm_int_wsa_dai);
 	}
+#ifdef CONFIG_VENDOR_SMARTISAN
+	memcpy(dailink + len1, maxim_fe_dai, sizeof(maxim_fe_dai));
+	len1 += ARRAY_SIZE(maxim_fe_dai);
+#endif
 	memcpy(dailink + len1, msm_int_be_dai, sizeof(msm_int_be_dai));
 	len1 += ARRAY_SIZE(msm_int_be_dai);
 
