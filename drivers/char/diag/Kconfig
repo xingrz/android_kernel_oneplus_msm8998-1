@@ -30,4 +30,10 @@ config DIAGFWD_BRIDGE_CODE
 	bool "Enable QSC/9K DIAG traffic over SMUX/HSIC"
 	help
 	 SMUX/HSIC Transport Layer for DIAG Router
+config DIAG_CERTIFY
+	bool "Enable DIAG certify function"
+        depends on DIAG_CHAR
+	default n
+	help
+	 This feature helps segregate code required for DIAG certify.
 endmenu

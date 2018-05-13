@@ -161,9 +161,12 @@ int diag_md_write(int id, unsigned char *buf, int len, int ctx)
 		if (ch->tbl[i].buf != buf)
 			continue;
 		found = 1;
-		pr_err_ratelimited("diag: trying to write the same buffer buf: %pK, ctxt: %d len: %d at i: %d back to the table, proc: %d, mode: %d\n",
-				   buf, ctx, ch->tbl[i].len,
-				   i, id, driver->logging_mode);
+		pr_err_ratelimited("diag: trying to write the same buffer buf: %pK, len: %d, back to the table for p: %d, t: %d, so flushing the table entry, proc: %d\n",
+				   buf, ch->tbl[i].len, GET_BUF_PERIPHERAL(ctx),
+				   GET_BUF_TYPE(ctx), id);
+		ch->tbl[i].buf = NULL;
+		ch->tbl[i].len = 0;
+		ch->tbl[i].ctx = 0;
 	}
 	spin_unlock_irqrestore(&ch->lock, flags);
 
@@ -227,7 +230,7 @@ int diag_md_copy_to_user(char __user *buf, int *pret, size_t buf_size,
 		ch = &diag_md[i];
 		for (j = 0; j < ch->num_tbl_entries && !err; j++) {
 			entry = &ch->tbl[j];
-			if (entry->len <= 0)
+			if (entry->len <= 0 || entry->buf == NULL)
 				continue;
 
 			peripheral = diag_md_get_peripheral(entry->ctx);
