@@ -120,6 +120,9 @@
 #define QPNP_HAP_WAV_S_REP_MAX		8
 #define QPNP_HAP_WF_AMP_MASK		GENMASK(5, 1)
 #define QPNP_HAP_WF_OVD_BIT		BIT(6)
+#ifdef CONFIG_VENDOR_SMARTISAN
+#define QPNP_HAP_WF_SIGN_BIT		BIT(7)
+#endif
 #define QPNP_HAP_BRAKE_PAT_MASK		0x3
 #define QPNP_HAP_ILIM_MIN_MA		400
 #define QPNP_HAP_ILIM_MAX_MA		800
@@ -139,6 +142,12 @@
 #define QPNP_HAP_WAV_SQUARE		1
 #define QPNP_HAP_WAV_SAMP_LEN		8
 #define QPNP_HAP_WAV_SAMP_MAX		0x3E
+#ifdef CONFIG_VENDOR_SMARTISAN
+#define QPNP_HAP_WAV_SAMP_FWD_3000_MV	0x32
+#define QPNP_HAP_WAV_SAMP_REV_3000_MV	0xB2
+#define QPNP_HAP_WAV_SAMP_FWD_MAX_MV	0x3E
+#define QPNP_HAP_WAV_SAMP_REV_MAX_MV	0xBE
+#endif
 #define QPNP_HAP_BRAKE_PAT_LEN		4
 #define QPNP_HAP_PLAY_EN_BIT		BIT(7)
 #define QPNP_HAP_EN_BIT			BIT(7)
@@ -667,12 +676,20 @@ static irqreturn_t qpnp_hap_sc_irq(int irq, void *_hap)
 }
 
 /* configuration api for buffer mode */
+#ifdef CONFIG_VENDOR_SMARTISAN
+static int qpnp_hap_buffer_config(struct qpnp_hap *hap, u8 *wave_samp,
+				bool overdrive, bool direction)
+#else
 static int qpnp_hap_buffer_config(struct qpnp_hap *hap, u8 *wave_samp,
 				bool overdrive)
+#endif
 {
 	u8 buf[QPNP_HAP_WAV_SAMP_LEN], val;
 	u8 *ptr;
 	int rc, i;
+#ifdef CONFIG_VENDOR_SMARTISAN
+	int sign;
+#endif
 
 	/* Configure the WAVE_REPEAT register */
 	if (hap->wave_rep_cnt < QPNP_HAP_WAV_REP_MIN)
@@ -703,9 +720,19 @@ static int qpnp_hap_buffer_config(struct qpnp_hap *hap, u8 *wave_samp,
 
 	/* Configure WAVE_SAMPLE1 to WAVE_SAMPLE8 register */
 	for (i = 0; i < QPNP_HAP_WAV_SAMP_LEN; i++) {
+#ifdef CONFIG_VENDOR_SMARTISAN
+		if (direction)
+			sign = ptr[i] & QPNP_HAP_WF_SIGN_BIT;
+		else
+			sign = 0;
+#endif
 		buf[i] = ptr[i] & QPNP_HAP_WF_AMP_MASK;
 		if (buf[i])
+#ifdef CONFIG_VENDOR_SMARTISAN
+			buf[i] |= ((overdrive ? QPNP_HAP_WF_OVD_BIT : 0) | sign);
+#else
 			buf[i] |= (overdrive ? QPNP_HAP_WF_OVD_BIT : 0);
+#endif
 	}
 
 	rc = qpnp_hap_write_mult_reg(hap, QPNP_HAP_WAV_S_REG_BASE(hap->base),
@@ -1400,7 +1427,11 @@ static ssize_t qpnp_hap_play_mode_store(struct device *dev,
 	if (temp == QPNP_HAP_BUFFER) {
 		rc = qpnp_hap_parse_buffer_dt(hap);
 		if (!rc)
+#ifdef CONFIG_VENDOR_SMARTISAN
+			rc = qpnp_hap_buffer_config(hap, NULL, false, false);
+#else
 			rc = qpnp_hap_buffer_config(hap, NULL, false);
+#endif
 	} else if (temp == QPNP_HAP_PWM && !hap->pwm_cfg_state) {
 		rc = qpnp_hap_parse_pwm_dt(hap);
 		if (!rc)
@@ -2116,16 +2147,37 @@ static int qpnp_hap_auto_mode_config(struct qpnp_hap *hap, int time_ms)
 	old_ares_mode = hap->ares_cfg.auto_res_mode;
 	old_play_mode = hap->play_mode;
 	pr_debug("auto_mode, time_ms: %d\n", time_ms);
+#ifdef CONFIG_VENDOR_SMARTISAN
+	/* disable short vibration */
+	if (time_ms < 1) {
+#else
 	if (time_ms <= 20) {
+#endif
+#ifdef CONFIG_VENDOR_SMARTISAN
+		pr_info("short pattern, time_ms: %d\n", time_ms);
+		/* forward 3 cycles */
+		wave_samp[0] = QPNP_HAP_WAV_SAMP_FWD_MAX_MV;
+		wave_samp[1] = QPNP_HAP_WAV_SAMP_FWD_MAX_MV;
+		wave_samp[2] = QPNP_HAP_WAV_SAMP_FWD_MAX_MV;
+
+		/*reverse 2 cycles */
+		wave_samp[3] = QPNP_HAP_WAV_SAMP_REV_MAX_MV;
+		wave_samp[4] = QPNP_HAP_WAV_SAMP_REV_MAX_MV;
+#else
 		wave_samp[0] = QPNP_HAP_WAV_SAMP_MAX;
 		wave_samp[1] = QPNP_HAP_WAV_SAMP_MAX;
 		if (time_ms > 15)
 			wave_samp[2] = QPNP_HAP_WAV_SAMP_MAX;
+#endif
 
 		/* short pattern */
 		rc = qpnp_hap_parse_buffer_dt(hap);
 		if (!rc)
+#ifdef CONFIG_VENDOR_SMARTISAN
+			rc = qpnp_hap_buffer_config(hap, wave_samp, true, true);
+#else
 			rc = qpnp_hap_buffer_config(hap, wave_samp, true);
+#endif
 		if (rc < 0) {
 			pr_err("Error in configuring buffer mode %d\n",
 				rc);
@@ -2161,7 +2213,11 @@ static int qpnp_hap_auto_mode_config(struct qpnp_hap *hap, int time_ms)
 		}
 
 		hap->play_mode = QPNP_HAP_BUFFER;
+#ifdef CONFIG_VENDOR_SMARTISAN
+		hap->wave_shape = QPNP_HAP_WAV_SINE;
+#else
 		hap->wave_shape = QPNP_HAP_WAV_SQUARE;
+#endif
 	} else {
 		/* long pattern */
 		ares_cfg.lra_high_z = QPNP_HAP_LRA_HIGH_Z_OPT1;
@@ -2585,7 +2641,11 @@ static int qpnp_hap_config(struct qpnp_hap *hap)
 		return rc;
 
 	if (hap->play_mode == QPNP_HAP_BUFFER)
+#ifdef CONFIG_VENDOR_SMARTISAN
+		rc = qpnp_hap_buffer_config(hap, NULL, false, false);
+#else
 		rc = qpnp_hap_buffer_config(hap, NULL, false);
+#endif
 	else if (hap->play_mode == QPNP_HAP_PWM)
 		rc = qpnp_hap_pwm_config(hap);
 	else if (hap->play_mode == QPNP_HAP_AUDIO)
@@ -3015,14 +3075,20 @@ static int qpnp_haptic_probe(struct platform_device *pdev)
 	}
 
 	spin_lock_init(&hap->bus_lock);
+#ifdef CONFIG_VENDOR_SMARTISAN
+	mutex_init(&hap->lock);
+	mutex_init(&hap->wf_lock);
+#endif
 	rc = qpnp_hap_config(hap);
 	if (rc) {
 		pr_err("hap config failed\n");
 		return rc;
 	}
 
+#ifndef CONFIG_VENDOR_SMARTISAN
 	mutex_init(&hap->lock);
 	mutex_init(&hap->wf_lock);
+#endif
 	INIT_WORK(&hap->work, qpnp_hap_worker);
 	INIT_DELAYED_WORK(&hap->sc_work, qpnp_handle_sc_irq);
 	init_completion(&hap->completion);
