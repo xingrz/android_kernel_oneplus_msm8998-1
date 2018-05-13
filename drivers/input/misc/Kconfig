@@ -810,6 +810,15 @@ config INPUT_DRV260X_HAPTICS
 	  To compile this driver as a module, choose M here: the
 	  module will be called drv260x-haptics.
 
+config INPUT_NXU8010_RGBW
+	tristate "NXU8010 rgb sensor"
+	depends on INPUT && I2C
+	help
+	  Say Y to enable support for the NXU8010 rgb sensor driver.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called nxu8010 rgb sensor.
+
 config INPUT_DRV2665_HAPTICS
 	tristate "TI DRV2665 haptics support"
 	depends on INPUT && I2C
