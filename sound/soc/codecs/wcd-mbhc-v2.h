@@ -461,6 +461,10 @@ struct wcd_mbhc {
 	struct notifier_block psy_nb;
 	struct power_supply *usb_psy;
 	struct work_struct usbc_analog_work;
+#ifdef CONFIG_VENDOR_SMARTISAN
+	struct delayed_work mbhc_fixup_dwork;
+	atomic_t not_fixup;
+#endif
 };
 #define WCD_MBHC_CAL_SIZE(buttons, rload) ( \
 	sizeof(struct wcd_mbhc_general_cfg) + \
