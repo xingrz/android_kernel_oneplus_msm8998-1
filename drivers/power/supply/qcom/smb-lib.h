@@ -19,6 +19,9 @@
 #include <linux/regulator/consumer.h>
 #include <linux/extcon.h>
 #include "storm-watch.h"
+#ifdef CONFIG_VENDOR_SMARTISAN
+#include <linux/fb.h>
+#endif
 
 enum print_reason {
 	PR_INTERRUPT	= BIT(0),
@@ -65,6 +68,10 @@ enum print_reason {
 #define OTG_DELAY_VOTER			"OTG_DELAY_VOTER"
 #define USBIN_I_VOTER			"USBIN_I_VOTER"
 #define WEAK_CHARGER_VOTER		"WEAK_CHARGER_VOTER"
+#ifdef CONFIG_VENDOR_SMARTISAN
+#define HIGH_OCV_VOTER			"HIGH_OCV_VOTER"
+#define JEITA_VOTER				"JEITA_VOTER"
+#endif
 
 #define VCONN_MAX_ATTEMPTS	3
 #define OTG_MAX_ATTEMPTS	3
@@ -307,6 +314,14 @@ struct smb_charger {
 	int			system_temp_level;
 	int			thermal_levels;
 	int			*thermal_mitigation;
+#ifdef CONFIG_VENDOR_SMARTISAN
+	int			thermal_levels_usb;
+	int			*thermal_mitigation_usb_5v;
+	int			*thermal_mitigation_usb_6v;
+	int			*thermal_mitigation_usb_7v;
+	int			*thermal_mitigation_usb_8v;
+	int			*thermal_mitigation_usb_9v;
+#endif
 	int			dcp_icl_ua;
 	int			fake_capacity;
 	bool			step_chg_enabled;
@@ -347,6 +362,14 @@ struct smb_charger {
 	/* qnovo */
 	int			usb_icl_delta_ua;
 	int			pulse_cnt;
+#ifdef CONFIG_VENDOR_SMARTISAN
+	struct notifier_block	fb_notifier;
+	bool					fb_ready;
+	struct mutex			therm_lvl_lock;
+	struct delayed_work		therm_adjust_work;
+	int						therm_adjust_work_en;
+	int						last_therm_icl_ma;
+#endif
 };
 
 int smblib_read(struct smb_charger *chg, u16 addr, u8 *val);
@@ -405,6 +428,10 @@ int smblib_get_prop_batt_present(struct smb_charger *chg,
 				union power_supply_propval *val);
 int smblib_get_prop_batt_capacity(struct smb_charger *chg,
 				union power_supply_propval *val);
+#ifdef CONFIG_VENDOR_SMARTISAN
+int smart_smblib_get_prop_batt_capacity(struct smb_charger *chg,
+				union power_supply_propval *val);
+#endif
 int smblib_get_prop_batt_status(struct smb_charger *chg,
 				union power_supply_propval *val);
 int smblib_get_prop_batt_charge_type(struct smb_charger *chg,
@@ -516,6 +543,12 @@ int smblib_get_prop_pr_swap_in_progress(struct smb_charger *chg,
 				union power_supply_propval *val);
 int smblib_set_prop_pr_swap_in_progress(struct smb_charger *chg,
 				const union power_supply_propval *val);
+
+#ifdef CONFIG_VENDOR_SMARTISAN
+int high_ocv_fcc_voter(int current_ua);
+void jeita_fcc_voter(int status);
+bool get_warm_disable_charge(void);
+#endif
 
 int smblib_init(struct smb_charger *chg);
 int smblib_deinit(struct smb_charger *chg);

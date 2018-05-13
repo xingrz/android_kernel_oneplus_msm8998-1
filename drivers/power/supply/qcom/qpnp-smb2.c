@@ -30,6 +30,10 @@
 
 #define SMB2_DEFAULT_WPWR_UW	8000000
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+struct smb_charger *chg_g;
+#endif
+
 static struct smb_params v1_params = {
 	.fcc			= {
 		.name	= "fast charge current",
@@ -375,6 +379,103 @@ static int smb2_parse_dt(struct smb2 *chip)
 			return rc;
 		}
 	}
+
+#ifdef CONFIG_VENDOR_SMARTISAN
+	if (of_find_property(node, "qcom,thermal-mitigation-usb-5v", &byte_len)) {
+		chg->thermal_mitigation_usb_5v = devm_kzalloc(chg->dev, byte_len,
+			GFP_KERNEL);
+
+		if (chg->thermal_mitigation_usb_5v == NULL)
+			return -ENOMEM;
+
+		chg->thermal_levels_usb = byte_len / sizeof(u32);
+		rc = of_property_read_u32_array(node,
+				"qcom,thermal-mitigation-usb-5v",
+				chg->thermal_mitigation_usb_5v,
+				chg->thermal_levels_usb);
+		if (rc < 0) {
+			dev_err(chg->dev,
+				"Couldn't read threm usb limits rc = %d\n", rc);
+			return rc;
+		}
+	}
+
+	if (of_find_property(node, "qcom,thermal-mitigation-usb-6v", &byte_len)) {
+		chg->thermal_mitigation_usb_6v = devm_kzalloc(chg->dev, byte_len,
+			GFP_KERNEL);
+
+		if (chg->thermal_mitigation_usb_6v == NULL)
+			return -ENOMEM;
+
+		chg->thermal_levels_usb = byte_len / sizeof(u32);
+		rc = of_property_read_u32_array(node,
+				"qcom,thermal-mitigation-usb-6v",
+				chg->thermal_mitigation_usb_6v,
+				chg->thermal_levels_usb);
+		if (rc < 0) {
+			dev_err(chg->dev,
+				"Couldn't read threm usb limits rc = %d\n", rc);
+			return rc;
+		}
+	}
+
+	if (of_find_property(node, "qcom,thermal-mitigation-usb-7v", &byte_len)) {
+		chg->thermal_mitigation_usb_7v = devm_kzalloc(chg->dev, byte_len,
+			GFP_KERNEL);
+
+		if (chg->thermal_mitigation_usb_7v == NULL)
+			return -ENOMEM;
+
+		chg->thermal_levels_usb = byte_len / sizeof(u32);
+		rc = of_property_read_u32_array(node,
+				"qcom,thermal-mitigation-usb-7v",
+				chg->thermal_mitigation_usb_7v,
+				chg->thermal_levels_usb);
+		if (rc < 0) {
+			dev_err(chg->dev,
+				"Couldn't read threm usb limits rc = %d\n", rc);
+			return rc;
+		}
+	}
+
+	if (of_find_property(node, "qcom,thermal-mitigation-usb-8v", &byte_len)) {
+		chg->thermal_mitigation_usb_8v = devm_kzalloc(chg->dev, byte_len,
+			GFP_KERNEL);
+
+		if (chg->thermal_mitigation_usb_8v == NULL)
+			return -ENOMEM;
+
+		chg->thermal_levels_usb = byte_len / sizeof(u32);
+		rc = of_property_read_u32_array(node,
+				"qcom,thermal-mitigation-usb-8v",
+				chg->thermal_mitigation_usb_8v,
+				chg->thermal_levels_usb);
+		if (rc < 0) {
+			dev_err(chg->dev,
+				"Couldn't read threm usb limits rc = %d\n", rc);
+			return rc;
+		}
+	}
+
+	if (of_find_property(node, "qcom,thermal-mitigation-usb-9v", &byte_len)) {
+		chg->thermal_mitigation_usb_9v = devm_kzalloc(chg->dev, byte_len,
+			GFP_KERNEL);
+
+		if (chg->thermal_mitigation_usb_9v == NULL)
+			return -ENOMEM;
+
+		chg->thermal_levels_usb = byte_len / sizeof(u32);
+		rc = of_property_read_u32_array(node,
+				"qcom,thermal-mitigation-usb-9v",
+				chg->thermal_mitigation_usb_9v,
+				chg->thermal_levels_usb);
+		if (rc < 0) {
+			dev_err(chg->dev,
+				"Couldn't read threm usb limits rc = %d\n", rc);
+			return rc;
+		}
+	}
+#endif
 
 	of_property_read_u32(node, "qcom,float-option", &chip->dt.float_option);
 	if (chip->dt.float_option < 0 || chip->dt.float_option > 4) {
@@ -1006,6 +1107,11 @@ static int smb2_batt_get_prop(struct power_supply *psy,
 
 	switch (psp) {
 	case POWER_SUPPLY_PROP_STATUS:
+#ifdef CONFIG_VENDOR_SMARTISAN
+		if (chg->real_charger_type == 0)
+			val->intval = POWER_SUPPLY_STATUS_DISCHARGING;
+		else
+#endif
 		rc = smblib_get_prop_batt_status(chg, val);
 		break;
 	case POWER_SUPPLY_PROP_HEALTH:
@@ -1021,7 +1127,11 @@ static int smb2_batt_get_prop(struct power_supply *psy,
 		rc = smblib_get_prop_batt_charge_type(chg, val);
 		break;
 	case POWER_SUPPLY_PROP_CAPACITY:
+#ifdef CONFIG_VENDOR_SMARTISAN
+		rc = smart_smblib_get_prop_batt_capacity(chg, val);
+#else
 		rc = smblib_get_prop_batt_capacity(chg, val);
+#endif
 		break;
 	case POWER_SUPPLY_PROP_SYSTEM_TEMP_LEVEL:
 		rc = smblib_get_prop_system_temp_level(chg, val);
@@ -2294,6 +2404,128 @@ static void smb2_create_debugfs(struct smb2 *chip)
 
 #endif
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+static int smb2_fb_notifier_cb(struct notifier_block *self,
+		unsigned long event, void *data)
+{
+	struct smb_charger *chg = container_of(self, struct smb_charger,
+			fb_notifier);
+	union power_supply_propval val;
+
+	switch (event) {
+		case LCD_EVENT_ON:
+			chg->fb_ready = true;
+			break;
+		case LCD_EVENT_OFF:
+			chg->fb_ready = false;
+			break;
+		default:
+			break;
+	}
+	val.intval = chg->system_temp_level;
+	if ((event == LCD_EVENT_ON) || (event == LCD_EVENT_OFF)) {
+		smblib_set_prop_system_temp_level(chg,&val);
+	}
+
+	return 0;
+}
+
+int high_ocv_fcc_voter(int current_ua)
+{
+	int rc = 0;
+
+	if (chg_g == NULL)
+		return -1;
+
+	rc = vote(chg_g->fcc_votable, HIGH_OCV_VOTER, true, current_ua);
+	if (rc) {
+		pr_err("couldn't configure batt fcc %d\n", rc);
+		return rc;
+	}
+
+	return rc;
+}
+
+#define JEITA_COLD 0
+#define JEITA_COOL 1
+#define JEITA_NORM 2
+#define JEITA_WARM 3
+#define JEITA_HOT  4
+#define JEITA_COOL_FCC  700000
+#define JEITA_WARM_FCC  1700000
+#define JEITA_BATTERY_OCV        4095000
+
+bool warm_disable_charge = false;
+
+bool get_warm_disable_charge(void)
+{
+	return warm_disable_charge;
+}
+
+void smart_disable_charge(bool en)
+{
+	if (chg_g == NULL)
+		return ;
+
+	if (en)
+		vote(chg_g->usb_icl_votable, JEITA_VOTER,true, 500*1000);
+	else
+		vote(chg_g->usb_icl_votable, JEITA_VOTER,false, 0);
+
+	msleep(50);
+	vote(chg_g->chg_disable_votable, JEITA_VOTER, en, 0);
+}
+
+void jeita_fcc_voter(int status)
+{
+	static int last_status;
+	int rc,ocv_val;
+	union power_supply_propval pval = {0, };
+
+	if (chg_g == NULL)
+		return;
+
+	if (status == JEITA_COLD || status == JEITA_HOT) {
+		warm_disable_charge = false;
+		smart_disable_charge(true);
+	}
+	else if (status == JEITA_WARM) {
+		rc = power_supply_get_property(chg_g->bms_psy,
+				POWER_SUPPLY_PROP_VOLTAGE_OCV, &pval);
+		if (rc < 0) {
+			pr_err("Couldn't get ocv property rc=%d\n",
+					rc);
+			return;
+		}
+		ocv_val = (int)pval.intval;
+		if(ocv_val > JEITA_BATTERY_OCV) {
+			warm_disable_charge = true;
+			smart_disable_charge(true);
+		}
+		else {
+			warm_disable_charge = false;
+			smart_disable_charge(false);
+		}
+	}
+	else {
+		warm_disable_charge = false;
+		smart_disable_charge(false);
+	}
+
+	if (last_status == status)
+		return;
+	last_status = status;
+
+	if (status == JEITA_COOL) {
+		vote(chg_g->fcc_votable, JEITA_VOTER, true, JEITA_COOL_FCC);
+	} else if(status == JEITA_WARM) {
+		vote(chg_g->fcc_votable, JEITA_VOTER, true, JEITA_WARM_FCC);
+	} else{
+		vote(chg_g->fcc_votable, JEITA_VOTER, false, 0);
+	}
+}
+#endif
+
 static int smb2_probe(struct platform_device *pdev)
 {
 	struct smb2 *chip;
@@ -2460,6 +2692,16 @@ static int smb2_probe(struct platform_device *pdev)
 
 	device_init_wakeup(chg->dev, true);
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+	chg_g = chg;
+	chg->fb_notifier.notifier_call = smb2_fb_notifier_cb;
+	rc = fb_register_client(&chg->fb_notifier);
+	if (rc < 0) {
+		pr_err("Failed to register fb notifier client rc=%d\n",rc);
+		goto cleanup;
+	}
+#endif
+
 	pr_info("QPNP SMB2 probed successfully usb:present=%d type=%d batt:present = %d health = %d charge = %d\n",
 		usb_present, chg->real_charger_type,
 		batt_present, batt_health, batt_charge_type);
@@ -2484,6 +2726,10 @@ cleanup:
 
 	smblib_deinit(chg);
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+	fb_unregister_client(&chg->fb_notifier);
+#endif
+
 	platform_set_drvdata(pdev, NULL);
 	return rc;
 }
@@ -2498,6 +2744,10 @@ static int smb2_remove(struct platform_device *pdev)
 	power_supply_unregister(chg->usb_port_psy);
 	regulator_unregister(chg->vconn_vreg->rdev);
 	regulator_unregister(chg->vbus_vreg->rdev);
+
+#ifdef CONFIG_VENDOR_SMARTISAN
+	fb_unregister_client(&chg->fb_notifier);
+#endif
 
 	platform_set_drvdata(pdev, NULL);
 	return 0;
@@ -2519,6 +2769,10 @@ static void smb2_shutdown(struct platform_device *pdev)
 	smblib_masked_write(chg, USBIN_OPTIONS_1_CFG_REG,
 				HVDCP_AUTONOMOUS_MODE_EN_CFG_BIT, 0);
 	smblib_write(chg, CMD_HVDCP_2_REG, FORCE_5V_BIT);
+
+#ifdef CONFIG_VENDOR_SMARTISAN
+	fb_unregister_client(&chg->fb_notifier);
+#endif
 
 	/* force enable APSD */
 	smblib_masked_write(chg, USBIN_OPTIONS_1_CFG_REG,
