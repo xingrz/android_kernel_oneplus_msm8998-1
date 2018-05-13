@@ -1636,11 +1636,17 @@ static int32_t msm_cci_write(struct v4l2_subdev *sd,
 		break;
 	case MSM_CCI_I2C_WRITE:
 	case MSM_CCI_I2C_WRITE_SEQ:
+#ifdef CONFIG_VENDOR_SMARTISAN
+		mutex_lock(&cci_master_info->mutex_o);
+#endif
 		for (i = 0; i < NUM_QUEUES; i++) {
 			if (mutex_trylock(&cci_master_info->mutex_q[i])) {
 				rc = msm_cci_i2c_write(sd, c_ctrl, i,
 					MSM_SYNC_DISABLE);
 				mutex_unlock(&cci_master_info->mutex_q[i]);
+#ifdef CONFIG_VENDOR_SMARTISAN
+				mutex_unlock(&cci_master_info->mutex_o);
+#endif
 				return rc;
 			}
 		}
@@ -1648,6 +1654,9 @@ static int32_t msm_cci_write(struct v4l2_subdev *sd,
 		rc = msm_cci_i2c_write(sd, c_ctrl,
 			PRIORITY_QUEUE, MSM_SYNC_DISABLE);
 		mutex_unlock(&cci_master_info->mutex_q[PRIORITY_QUEUE]);
+#ifdef CONFIG_VENDOR_SMARTISAN
+		mutex_unlock(&cci_master_info->mutex_o);
+#endif
 		break;
 	case MSM_CCI_I2C_WRITE_ASYNC:
 		rc = msm_cci_i2c_write_async(sd, c_ctrl,
@@ -1659,21 +1668,56 @@ static int32_t msm_cci_write(struct v4l2_subdev *sd,
 	return rc;
 }
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+static int32_t msm_cci_config(struct v4l2_subdev *sd,
+	struct msm_camera_cci_ctrl *cci_ctrl, uint8_t cci_msm_close)
+#else
 static int32_t msm_cci_config(struct v4l2_subdev *sd,
 	struct msm_camera_cci_ctrl *cci_ctrl)
+#endif
 {
 	int32_t rc = 0;
+#ifdef CONFIG_VENDOR_SMARTISAN
+	struct cci_device *cci_dev;
+	enum cci_i2c_master_t master;
+	struct msm_camera_cci_master_info *cci_master_info;
+#endif
 	CDBG("%s line %d cmd %d\n", __func__, __LINE__,
 		cci_ctrl->cmd);
+#ifdef CONFIG_VENDOR_SMARTISAN
+	cci_dev = v4l2_get_subdevdata(sd);
+	if (!cci_dev || !cci_ctrl) {
+		pr_err("%s:%d failed: invalid params %p %p\n", __func__,
+			__LINE__, cci_dev, cci_ctrl);
+		rc = -EINVAL;
+		return rc;
+	}
+	if (!cci_msm_close) {
+		master = cci_ctrl->cci_info->cci_i2c_master;
+		cci_master_info = &cci_dev->cci_master_info[master];
+	}
+#endif
 	switch (cci_ctrl->cmd) {
 	case MSM_CCI_INIT:
+#ifdef CONFIG_VENDOR_SMARTISAN
+		mutex_lock(&cci_master_info->mutex_o);
+#endif
 		rc = msm_cci_init(sd, cci_ctrl);
+#ifdef CONFIG_VENDOR_SMARTISAN
+		mutex_unlock(&cci_master_info->mutex_o);
+#endif
 		break;
 	case MSM_CCI_RELEASE:
 		rc = msm_cci_release(sd);
 		break;
 	case MSM_CCI_I2C_READ:
+#ifdef CONFIG_VENDOR_SMARTISAN
+		mutex_lock(&cci_master_info->mutex_o);
+#endif
 		rc = msm_cci_i2c_read_bytes(sd, cci_ctrl);
+#ifdef CONFIG_VENDOR_SMARTISAN
+		mutex_unlock(&cci_master_info->mutex_o);
+#endif
 		break;
 	case MSM_CCI_I2C_WRITE:
 	case MSM_CCI_I2C_WRITE_SEQ:
@@ -1827,7 +1871,11 @@ static long msm_cci_subdev_ioctl(struct v4l2_subdev *sd,
 	CDBG("%s line %d\n", __func__, __LINE__);
 	switch (cmd) {
 	case VIDIOC_MSM_CCI_CFG:
+#ifdef CONFIG_VENDOR_SMARTISAN
+		rc = msm_cci_config(sd, arg, 0);
+#else
 		rc = msm_cci_config(sd, arg);
+#endif
 		break;
 	case MSM_SD_NOTIFY_FREEZE:
 		break;
@@ -1836,7 +1884,12 @@ static long msm_cci_subdev_ioctl(struct v4l2_subdev *sd,
 	case MSM_SD_SHUTDOWN: {
 		struct msm_camera_cci_ctrl ctrl_cmd;
 		ctrl_cmd.cmd = MSM_CCI_RELEASE;
+#ifdef CONFIG_VENDOR_SMARTISAN
+		//when msm_close ,has no cci_i2c_master
+		rc = msm_cci_config(sd, &ctrl_cmd, 1);
+#else
 		rc = msm_cci_config(sd, &ctrl_cmd);
+#endif
 		break;
 	}
 	default:
@@ -1873,6 +1926,9 @@ static void msm_cci_init_cci_params(struct cci_device *new_cci_dev)
 			spin_lock_init(&new_cci_dev->
 				cci_master_info[i].lock_q[j]);
 		}
+#ifdef CONFIG_VENDOR_SMARTISAN
+		mutex_init(&new_cci_dev->cci_master_info[i].mutex_o);
+#endif
 	}
 	return;
 }

@@ -181,6 +181,10 @@ static int msm_actuator_bivcm_handle_i2c_ops(
 		reg_setting.size = 1;
 		switch (write_arr[i].reg_write_type) {
 		case MSM_ACTUATOR_WRITE_DAC:
+#ifdef CONFIG_VENDOR_SMARTISAN
+			// for vcm 214 Covert 0~1023 to 2'complement 2017-08-29
+			next_lens_position = 2047 - next_lens_position * 4;
+#endif
 			value = (next_lens_position <<
 			write_arr[i].data_shift) |
 			((hw_dword & write_arr[i].hw_mask) >>

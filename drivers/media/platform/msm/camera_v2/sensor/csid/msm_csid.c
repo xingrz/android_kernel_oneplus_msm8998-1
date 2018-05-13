@@ -59,7 +59,12 @@
 #define FALSE  0
 
 #define MAX_LANE_COUNT 4
+#ifdef CONFIG_VENDOR_SMARTISAN
+// xiaopeng csid reset 100ms timeout fail in MTBF test 2016-01-03
+#define CSID_TIMEOUT msecs_to_jiffies(500)
+#else
 #define CSID_TIMEOUT msecs_to_jiffies(100)
+#endif
 
 #undef CDBG
 #define CDBG(fmt, args...) pr_debug(fmt, ##args)
