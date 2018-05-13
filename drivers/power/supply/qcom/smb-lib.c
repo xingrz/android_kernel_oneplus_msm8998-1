@@ -40,6 +40,10 @@
 				__func__, ##__VA_ARGS__);	\
 	} while (0)
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+extern int smart_set_dp_dm_enable(void);
+#endif
+
 static bool is_secure(struct smb_charger *chg, int addr)
 {
 	if (addr == SHIP_MODE_REG || addr == FREQ_CLK_DIV_REG)
@@ -535,6 +539,12 @@ static void smblib_rerun_apsd(struct smb_charger *chg)
 	int rc;
 
 	smblib_dbg(chg, PR_MISC, "re-running APSD\n");
+#ifdef CONFIG_VENDOR_SMARTISAN
+	rc = smart_set_dp_dm_enable();
+	if (rc < 0)
+		pr_err("smart_set_dp_dm_enable error !\n");
+#endif
+
 	if (chg->wa_flags & QC_AUTH_INTERRUPT_WA_BIT) {
 		rc = smblib_masked_write(chg,
 				USBIN_SOURCE_CHANGE_INTRPT_ENB_REG,
