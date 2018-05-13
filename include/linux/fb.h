@@ -163,6 +163,13 @@ struct fb_cursor_user {
 /*      A hardware display blank revert early change occured */
 #define FB_R_EARLY_EVENT_BLANK		0x11
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+#define LCD_EVENT_ON		0xFF0
+#define LCD_EVENT_ON_END	0xFF1
+#define LCD_EVENT_OFF		0xFF2
+#define LCD_EVENT_OFF_END	0xFF3
+#endif
+
 struct fb_event {
 	struct fb_info *info;
 	void *data;
