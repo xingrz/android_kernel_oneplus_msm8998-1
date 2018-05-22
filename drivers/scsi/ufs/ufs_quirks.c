@@ -13,7 +13,14 @@
 
 #include "ufshcd.h"
 #include "ufs_quirks.h"
+#ifdef CONFIG_VENDOR_SMARTISAN
+#include "ufshci.h"
+#endif
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+static int ufs_version = 0;
+int pro_flag = 0;
+#endif
 
 static struct ufs_card_fix ufs_fixups[] = {
 	/* UFS cards deviations table */
@@ -61,6 +68,17 @@ static int ufs_get_device_info(struct ufs_hba *hba,
 	if (err)
 		goto out;
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+	if (desc_buf[DEVICE_DESC_PARAM_HIGH_PR_LUN] == 0x02)
+		pro_flag = 1;
+	else
+		pro_flag = 0;
+
+	hba->ufschip_version = desc_buf[DEVICE_DESC_PARAM_SPEC_VER] << 8 | desc_buf[DEVICE_DESC_PARAM_SPEC_VER + 1];
+	/*Get ufs_version*/
+	ufs_version = hba->ufschip_version;
+#endif
+
 	/*
 	 * getting vendor (manufacturerID) and Bank Index in big endian
 	 * format
@@ -86,6 +104,48 @@ static int ufs_get_device_info(struct ufs_hba *hba,
 out:
 	return err;
 }
+
+#ifdef CONFIG_VENDOR_SMARTISAN
+ssize_t ufs_provision_show(struct device *dev, struct device_attribute *attr,
+			char *buf)
+{
+	return sprintf(buf, "%d\n", pro_flag);
+}
+DEVICE_ATTR_RO(ufs_provision);
+
+void ufshcd_add_sysfs_prov(struct ufs_hba *hba)
+{
+	device_create_file(hba->dev, &dev_attr_ufs_provision);
+}
+
+ssize_t ufs_version_show(struct device *dev, struct device_attribute *attr,
+			char *buf)
+{
+	char *ufs_version_ptr= NULL;
+	switch(ufs_version)
+	{
+		case UFSHCI_VERSION_20: /* 2.0 */
+			ufs_version_ptr = "UFS2.0";
+			break;
+		case UFSHCI_VERSION_21: /* 2.1 */
+			ufs_version_ptr = "UFS2.1";
+			break;
+		case UFSHCI_VERSION_10: /* 1.0 */
+		case UFSHCI_VERSION_11: /* 1.1 */
+		default:
+			printk(KERN_ERR "%s: Failed getting ufs version 0x%x\n", __func__, ufs_version);
+			ufs_version_ptr = "unknown";
+			break;
+	}
+	return sprintf(buf, "%s\n", ufs_version_ptr);
+}
+DEVICE_ATTR_RO(ufs_version);
+
+void ufshcd_add_sysfs_version(struct ufs_hba *hba)
+{
+	device_create_file(hba->dev, &dev_attr_ufs_version);
+}
+#endif
 
 void ufs_advertise_fixup_device(struct ufs_hba *hba)
 {

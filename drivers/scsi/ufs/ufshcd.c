@@ -43,12 +43,20 @@
 #include <linux/nls.h>
 #include <linux/of.h>
 #include <linux/blkdev.h>
+#ifdef CONFIG_VENDOR_SMARTISAN
+#include <soc/qcom/boot_stats.h>
+#endif
 
 #include "ufshcd.h"
 #include "ufshci.h"
 #include "ufs_quirks.h"
 #include "ufs-debugfs.h"
 #include "ufs-qcom.h"
+
+#ifdef CONFIG_VENDOR_SMARTISAN
+#define HAS_A_UFS 0x11
+#define HAS_NO_UFS 0x01
+#endif
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/ufs.h>
@@ -969,8 +977,10 @@ static inline u32 ufshcd_get_intr_mask(struct ufs_hba *hba)
  */
 static inline u32 ufshcd_get_ufs_version(struct ufs_hba *hba)
 {
+#ifndef CONFIG_VENDOR_SMARTISAN
 	if (hba->quirks & UFSHCD_QUIRK_BROKEN_UFS_HCI_VERSION)
 		return ufshcd_vops_get_ufs_hci_version(hba);
+#endif
 
 	return ufshcd_readl(hba, REG_UFS_VERSION);
 }
@@ -5035,7 +5045,11 @@ link_startup:
 
 	ret = ufshcd_make_hba_operational(hba);
 out:
+#ifdef CONFIG_VENDOR_SMARTISAN
+	if (ret && (get_ufs_flag() == HAS_A_UFS)) {
+#else
 	if (ret) {
+#endif
 		dev_err(hba->dev, "link startup failed %d\n", ret);
 		ufshcd_print_host_state(hba);
 		ufshcd_print_pwr_info(hba);
@@ -7447,6 +7461,12 @@ static int ufshcd_probe_hba(struct ufs_hba *hba)
 
 	ufs_advertise_fixup_device(hba);
 	ufshcd_tune_unipro_params(hba);
+
+#ifdef CONFIG_VENDOR_SMARTISAN
+	dev_info(hba->dev, "UFSCHIP version 0x%x\n", hba->ufschip_version);
+	if (hba->ufschip_version == 0x200)
+		ufs_qcom_set_disbale_lpm(hba, true);
+#endif
 
 	ufshcd_apply_pm_quirks(hba);
 	ret = ufshcd_set_vccq_rail_unused(hba,
@@ -10015,6 +10035,12 @@ int ufshcd_init(struct ufs_hba *hba, void __iomem *mmio_base, unsigned int irq)
 	ufsdbg_add_debugfs(hba);
 
 	ufshcd_add_sysfs_nodes(hba);
+
+#ifdef CONFIG_VENDOR_SMARTISAN
+	ufshcd_add_sysfs_prov(hba);
+
+	ufshcd_add_sysfs_version(hba);
+#endif
 
 	return 0;
 

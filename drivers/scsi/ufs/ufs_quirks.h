@@ -149,4 +149,8 @@ struct ufs_card_fix {
 
 struct ufs_hba;
 void ufs_advertise_fixup_device(struct ufs_hba *hba);
+#ifdef CONFIG_VENDOR_SMARTISAN
+void ufshcd_add_sysfs_prov(struct ufs_hba *hba);
+void ufshcd_add_sysfs_version(struct ufs_hba *hba);
+#endif
 #endif /* UFS_QUIRKS_H_ */

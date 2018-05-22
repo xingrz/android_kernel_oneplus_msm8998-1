@@ -36,6 +36,9 @@
 #include <linux/platform_device.h>
 #include <linux/pm_runtime.h>
 #include <linux/of.h>
+#ifdef CONFIG_VENDOR_SMARTISAN
+#include <linux/of_gpio.h>
+#endif
 
 #include "ufshcd.h"
 #include "ufshcd-pltfrm.h"
@@ -264,6 +267,37 @@ static int ufshcd_parse_pinctrl_info(struct ufs_hba *hba)
 	return ret;
 }
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+static int ufshcd_parse_gpiopower_info(struct ufs_hba *hba)
+{
+	struct device *dev = hba->dev;
+	struct device_node *np = dev->of_node;
+	int vccq2_power = 0;
+	int ret = 0;
+
+	if (!np || !of_find_property(np, "vccq2_gpios", NULL)) {
+		return 0;
+	}
+
+	vccq2_power = of_get_named_gpio(np, "vccq2_gpios", 0);
+	if (vccq2_power < 0 && vccq2_power != -ENOENT) {
+		ret = vccq2_power;
+		dev_err(dev, "get vccq2_gpio gpio failed\n");
+		return ret;
+	}
+
+	dev_dbg(dev, "get vccq2_power gpio %d\n", vccq2_power);
+	if (gpio_is_valid(vccq2_power)) {
+		ret = devm_gpio_request_one(dev, vccq2_power, GPIOF_OUT_INIT_HIGH,
+			    "UFS_VCCQ2_POWER_ON");
+		if (ret < 0)
+			dev_err(dev, "UFS_VCCQ2_POWER_ON gpio power on failed\n");
+	}
+
+	return ret;
+}
+#endif
+
 #ifdef CONFIG_SMP
 /**
  * ufshcd_pltfrm_suspend - suspend power management function
@@ -354,6 +388,14 @@ int ufshcd_pltfrm_init(struct platform_device *pdev,
 	}
 
 	hba->var = var;
+
+#ifdef CONFIG_VENDOR_SMARTISAN
+	err = ufshcd_parse_gpiopower_info(hba);
+	if (err) {
+		dev_err(&pdev->dev, "%s: gpio power parse failed %d\n",
+				__func__, err);
+	}
+#endif
 
 	err = ufshcd_parse_clock_info(hba);
 	if (err) {
