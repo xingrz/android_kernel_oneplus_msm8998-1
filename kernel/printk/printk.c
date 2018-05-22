@@ -299,6 +299,18 @@ u32 log_buf_len_get(void)
 	return log_buf_len;
 }
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+char * log_first_idx_get(void)
+{
+	return (char *)&log_first_idx;
+}
+
+char * log_next_idx_get(void)
+{
+	return (char *)&log_next_idx;
+}
+#endif
+
 /* human readable text of the record */
 static char *log_text(const struct printk_log *msg)
 {
