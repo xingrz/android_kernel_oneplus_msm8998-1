@@ -92,6 +92,33 @@
 		.intr_detection_bit = -1,		\
 		.intr_detection_width = -1,		\
 	}
+
+#ifdef CONFIG_VENDOR_SMARTISAN
+#define UFS_RESET(pg_name, offset)			\
+	{						\
+		.name = #pg_name,			\
+		.pins = pg_name##_pins,			\
+		.npins = (unsigned)ARRAY_SIZE(pg_name##_pins), \
+		.ctl_reg = offset,			\
+		.io_reg = offset + 0x4,			\
+		.intr_cfg_reg = 0,			\
+		.intr_status_reg = 0,			\
+		.intr_target_reg = 0,			\
+		.mux_bit = -1,				\
+		.pull_bit = 3,				\
+		.drv_bit = 0,				\
+		.oe_bit = -1,				\
+		.in_bit = -1,				\
+		.out_bit = 0,				\
+		.intr_enable_bit = -1,			\
+		.intr_status_bit = -1,			\
+		.intr_target_bit = -1,			\
+		.intr_raw_status_bit = -1,		\
+		.intr_polarity_bit = -1,		\
+		.intr_detection_bit = -1,		\
+		.intr_detection_width = -1,		\
+	}
+#endif
 static const struct pinctrl_pin_desc sdm660_pins[] = {
 	PINCTRL_PIN(0, "GPIO_0"),
 	PINCTRL_PIN(1, "GPIO_1"),
@@ -214,6 +241,9 @@ static const struct pinctrl_pin_desc sdm660_pins[] = {
 	PINCTRL_PIN(118, "SDC2_CMD"),
 	PINCTRL_PIN(119, "SDC2_DATA"),
 	PINCTRL_PIN(120, "SDC1_RCLK"),
+#ifdef CONFIG_VENDOR_SMARTISAN
+	PINCTRL_PIN(121, "UFS_RESET"),
+#endif
 };
 
 #define DECLARE_MSM_GPIO_PINS(pin) \
@@ -340,6 +370,9 @@ static const unsigned int sdc2_clk_pins[] = { 117 };
 static const unsigned int sdc2_cmd_pins[] = { 118 };
 static const unsigned int sdc2_data_pins[] = { 119 };
 static const unsigned int sdc1_rclk_pins[] = { 120 };
+#ifdef CONFIG_VENDOR_SMARTISAN
+static const unsigned int ufs_reset_pins[] = { 121 };
+#endif
 
 enum sdm660_functions {
 	msm_mux_blsp_spi1,
@@ -1673,6 +1706,9 @@ static const struct msm_pingroup sdm660_groups[] = {
 	SDC_QDSD_PINGROUP(sdc2_cmd, 0x99b000, 11, 3),
 	SDC_QDSD_PINGROUP(sdc2_data, 0x99b000, 9, 0),
 	SDC_QDSD_PINGROUP(sdc1_rclk, 0x99a000, 15, 0),
+#ifdef CONFIG_VENDOR_SMARTISAN
+	UFS_RESET(ufs_reset, 0x9a3000),
+#endif
 };
 
 static const struct msm_pinctrl_soc_data sdm660_pinctrl = {
