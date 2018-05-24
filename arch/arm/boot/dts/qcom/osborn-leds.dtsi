@@ -10,14 +10,15 @@
  * GNU General Public License for more details.
  */
 
-
-&pm660l_pwm_3 {
-	/delete-property/ qcom,period;
-	/delete-node/ qcom,lpg;
+&spmi_bus {
+	qcom,pm660l@3 {
+		qcom,leds@d000 {
+			qcom,rgb-sync;
+		};
+	};
 };
 
-&blue_led {
-	qcom,mode = "lpg";
+&red_led {
 	qcom,start-idx = <0>;
 	qcom,idx-len = <48>;
 	qcom,duty-pcts =
@@ -25,7 +26,33 @@
 		06 08 0a 0c 0d 0f 14 18 1c 1f 24 28
 		2c 2f 34 38 3c 3f 45 4a 4f 55 5a 5f
 		67 6f 77 7f 8f 9f af bf cf df ef ff];
-	qcom,lut-flags = <5>;
+	qcom,lut-flags = <0x1f>;
+	qcom,ramp-step-ms = <34>;
+	qcom,use-blink;
+};
+
+&green_led {
+	qcom,start-idx = <0>;
+	qcom,idx-len = <48>;
+	qcom,duty-pcts =
+		[00 00 00 00 00 00 00 01 02 03 04 05
+		06 08 0a 0c 0d 0f 14 18 1c 1f 24 28
+		2c 2f 34 38 3c 3f 45 4a 4f 55 5a 5f
+		67 6f 77 7f 8f 9f af bf cf df ef ff];
+	qcom,lut-flags = <0x1f>;
+	qcom,ramp-step-ms = <34>;
+	qcom,use-blink;
+};
+
+&blue_led {
+	qcom,start-idx = <0>;
+	qcom,idx-len = <48>;
+	qcom,duty-pcts =
+		[00 00 00 00 00 00 00 01 02 03 04 05
+		06 08 0a 0c 0d 0f 14 18 1c 1f 24 28
+		2c 2f 34 38 3c 3f 45 4a 4f 55 5a 5f
+		67 6f 77 7f 8f 9f af bf cf df ef ff];
+	qcom,lut-flags = <0x1f>;
 	qcom,ramp-step-ms = <34>;
 	qcom,use-blink;
 };
