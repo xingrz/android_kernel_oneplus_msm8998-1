@@ -19,7 +19,6 @@
 };
 
 &red_led {
-	qcom,mode = "lpg";
 	qcom,start-idx = <0>;
 	qcom,idx-len = <48>;
 	qcom,duty-pcts =
@@ -33,7 +32,6 @@
 };
 
 &green_led {
-	qcom,mode = "lpg";
 	qcom,start-idx = <0>;
 	qcom,idx-len = <48>;
 	qcom,duty-pcts =
@@ -47,7 +45,6 @@
 };
 
 &blue_led {
-	qcom,mode = "lpg";
 	qcom,start-idx = <0>;
 	qcom,idx-len = <48>;
 	qcom,duty-pcts =
