@@ -1388,13 +1388,6 @@ static int synaptics_rmi4_f12_abs_report(struct synaptics_rmi4_data *rmi4_data,
 
 			input_report_key(rmi4_data->input_dev,
 					BTN_TOUCH, 1);
-			if (x <= 20 || x >= 1060) {
-				if (x <= 20)
-					x = 20;
-				else if (x >= 1060)
-					x = 1060;
-				dev_dbg(rmi4_data->pdev->dev.parent, "x axis modified, x = %d\n", x);
-			}
 			input_report_abs(rmi4_data->input_dev,
 					ABS_MT_POSITION_X, x);
 			input_report_abs(rmi4_data->input_dev,
