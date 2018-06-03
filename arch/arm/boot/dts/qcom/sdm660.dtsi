@@ -302,6 +302,16 @@
 			compatible = "android,firmware";
 			fstab {
 				compatible = "android,fstab";
+#ifdef CONFIG_VENDOR_SMARTISAN
+				system {
+					compatible = "android,system";
+					dev = "/dev/block/platform/soc/c0c4000.sdhci/by-name/system";
+					type = "ext4";
+					mnt_flags = "ro,barrier=1,discard";
+					fsmgr_flags = "wait";
+					status = "ok";
+				};
+#else
 				vendor {
 					compatible = "android,vendor";
 					dev = "/dev/block/platform/soc/c0c4000.sdhci/by-name/vendor";
@@ -310,6 +320,7 @@
 					fsmgr_flags = "wait,slotselect";
 					status = "ok";
 				};
+#endif
 			};
 		};
 	};
