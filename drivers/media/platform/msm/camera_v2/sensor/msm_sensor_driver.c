@@ -86,13 +86,17 @@ static int32_t msm_sensor_driver_create_i2c_v4l_subdev
 	struct i2c_client *client = s_ctrl->sensor_i2c_client->client;
 
 	CDBG("%s %s I2c probe succeeded\n", __func__, client->name);
+#ifndef CONFIG_VENDOR_SMARTISAN
 	if (s_ctrl->bypass_video_node_creation == 0) {
+#endif
 		rc = camera_init_v4l2(&client->dev, &session_id);
 		if (rc < 0) {
 			pr_err("failed: camera_init_i2c_v4l2 rc %d", rc);
 			return rc;
 		}
+#ifndef CONFIG_VENDOR_SMARTISAN
 	}
+#endif
 
 	CDBG("%s rc %d session_id %d\n", __func__, rc, session_id);
 	snprintf(s_ctrl->msm_sd.sd.name,
@@ -130,13 +134,17 @@ static int32_t msm_sensor_driver_create_v4l_subdev
 	int32_t rc = 0;
 	uint32_t session_id = 0;
 
+#ifndef CONFIG_VENDOR_SMARTISAN
 	if (s_ctrl->bypass_video_node_creation == 0) {
+#endif
 		rc = camera_init_v4l2(&s_ctrl->pdev->dev, &session_id);
 		if (rc < 0) {
 			pr_err("failed: camera_init_v4l2 rc %d", rc);
 			return rc;
 		}
+#ifndef CONFIG_VENDOR_SMARTISAN
 	}
+#endif
 
 	CDBG("rc %d session_id %d", rc, session_id);
 	s_ctrl->sensordata->sensor_info->session_id = session_id;
@@ -297,6 +305,7 @@ static int32_t msm_sensor_fill_actuator_subdevid_by_name(
 	return rc;
 }
 
+#ifndef CONFIG_VENDOR_SMARTISAN
 static int32_t msm_sensor_fill_laser_led_subdevid_by_name(
 				struct msm_sensor_ctrl_t *s_ctrl)
 {
@@ -335,6 +344,7 @@ static int32_t msm_sensor_fill_laser_led_subdevid_by_name(
 
 	return rc;
 }
+#endif
 
 static int32_t msm_sensor_fill_flash_subdevid_by_name(
 				struct msm_sensor_ctrl_t *s_ctrl)
@@ -820,8 +830,10 @@ int32_t msm_sensor_driver_probe(void *setting,
 			slave_info32->sensor_init_params;
 		slave_info->output_format =
 			slave_info32->output_format;
+#ifndef CONFIG_VENDOR_SMARTISAN
 		slave_info->bypass_video_node_creation =
 			!!slave_info32->bypass_video_node_creation;
+#endif
 		kfree(slave_info32);
 	} else
 #endif
@@ -864,8 +876,10 @@ int32_t msm_sensor_driver_probe(void *setting,
 		slave_info->sensor_init_params.position);
 	CDBG("mount %d",
 		slave_info->sensor_init_params.sensor_mount_angle);
+#ifndef CONFIG_VENDOR_SMARTISAN
 	CDBG("bypass video node creation %d",
 		slave_info->bypass_video_node_creation);
+#endif
 	/* Validate camera id */
 	if (slave_info->camera_id >= MAX_CAMERAS) {
 		pr_err("failed: invalid camera id %d max %d",
@@ -1020,11 +1034,13 @@ CSID_TG:
 		pr_err("%s failed %d\n", __func__, __LINE__);
 		goto free_camera_info;
 	}
+#ifndef CONFIG_VENDOR_SMARTISAN
 	rc = msm_sensor_fill_laser_led_subdevid_by_name(s_ctrl);
 	if (rc < 0) {
 		pr_err("%s failed %d\n", __func__, __LINE__);
 		goto free_camera_info;
 	}
+#endif
 
 	rc = msm_sensor_fill_ois_subdevid_by_name(s_ctrl);
 	if (rc < 0) {
@@ -1047,8 +1063,10 @@ CSID_TG:
 
 	pr_err("%s probe succeeded", slave_info->sensor_name);
 
+#ifndef CONFIG_VENDOR_SMARTISAN
 	s_ctrl->bypass_video_node_creation =
 		slave_info->bypass_video_node_creation;
+#endif
 
 	/*
 	 * Create /dev/videoX node, comment for now until dummy /dev/videoX

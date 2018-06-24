@@ -41,7 +41,9 @@ struct msm_camera_sensor_slave_info32 {
 	uint8_t  is_init_params_valid;
 	struct msm_sensor_init_params sensor_init_params;
 	enum msm_sensor_output_format_t output_format;
+#ifndef CONFIG_VENDOR_SMARTISAN
 	uint8_t bypass_video_node_creation;
+#endif
 };
 
 struct msm_camera_csid_lut_params32 {
@@ -84,6 +86,7 @@ struct msm_ir_cut_cfg_data_t32 {
 	enum msm_ir_cut_cfg_type_t cfg_type;
 };
 
+#ifndef CONFIG_VENDOR_SMARTISAN
 struct msm_laser_led_cfg_data_t32 {
 	enum msm_laser_led_cfg_type_t cfg_type;
 	compat_uptr_t                 setting;
@@ -92,6 +95,7 @@ struct msm_laser_led_cfg_data_t32 {
 	uint16_t                      i2c_addr;
 	enum i2c_freq_mode_t          i2c_freq_mode;
 };
+#endif
 
 struct eeprom_read_t32 {
 	compat_uptr_t dbuffer;
@@ -289,8 +293,10 @@ struct msm_flash_cfg_data_t32 {
 #define VIDIOC_MSM_IR_CUT_CFG32 \
 	_IOWR('V', BASE_VIDIOC_PRIVATE + 15, struct msm_ir_cut_cfg_data_t32)
 
+#ifndef CONFIG_VENDOR_SMARTISAN
 #define VIDIOC_MSM_LASER_LED_CFG32 \
 	_IOWR('V', BASE_VIDIOC_PRIVATE + 16, struct msm_laser_led_cfg_data_t32)
+#endif
 
 #endif
 

@@ -90,7 +90,9 @@ enum sensor_sub_module_t {
 	SUB_MODULE_EXT,
 	SUB_MODULE_IR_LED,
 	SUB_MODULE_IR_CUT,
+#ifndef CONFIG_VENDOR_SMARTISAN
 	SUB_MODULE_LASER_LED,
+#endif
 	SUB_MODULE_MAX,
 };
 
@@ -307,6 +309,7 @@ struct msm_ir_cut_cfg_data_t {
 	enum msm_ir_cut_cfg_type_t cfg_type;
 };
 
+#ifndef CONFIG_VENDOR_SMARTISAN
 struct msm_laser_led_cfg_data_t {
 	enum msm_laser_led_cfg_type_t cfg_type;
 	void __user                   *setting;
@@ -315,6 +318,7 @@ struct msm_laser_led_cfg_data_t {
 	uint16_t                      i2c_addr;
 	enum i2c_freq_mode_t          i2c_freq_mode;
 };
+#endif
 
 struct msm_eeprom_cfg_data {
 	enum eeprom_cfg_type_t cfgtype;
@@ -633,8 +637,10 @@ struct sensor_init_cfg_data {
 #define VIDIOC_MSM_IR_CUT_CFG \
 	_IOWR('V', BASE_VIDIOC_PRIVATE + 15, struct msm_ir_cut_cfg_data_t)
 
+#ifndef CONFIG_VENDOR_SMARTISAN
 #define VIDIOC_MSM_LASER_LED_CFG \
 	_IOWR('V', BASE_VIDIOC_PRIVATE + 16, struct msm_laser_led_cfg_data_t)
+#endif
 
 #endif
 

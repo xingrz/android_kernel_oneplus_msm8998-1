@@ -48,7 +48,9 @@
 #define MSM_EEPROM_MEMORY_MAP_MAX_SIZE  80
 #define MSM_EEPROM_MAX_MEM_MAP_CNT      8
 
+#ifndef CONFIG_VENDOR_SMARTISAN
 #define MSM_SENSOR_BYPASS_VIDEO_NODE    1
+#endif
 
 //JiGaoping add for write data to eeprom 2016-12-02
 #ifdef CONFIG_VENDOR_SMARTISAN
@@ -127,10 +129,14 @@ enum msm_sensor_power_seq_gpio_t {
 	SENSOR_GPIO_FL_RESET,
 	SENSOR_GPIO_CUSTOM1,
 	SENSOR_GPIO_CUSTOM2,
+#ifndef CONFIG_VENDOR_SMARTISAN
 	SENSOR_GPIO_CUSTOM3,
+#endif
 	SENSOR_GPIO_MAX,
 };
+#ifndef CONFIG_VENDOR_SMARTISAN
 #define SENSOR_GPIO_CUSTOM3 SENSOR_GPIO_CUSTOM3
+#endif
 
 enum msm_ir_cut_filter_gpio_t {
 	IR_CUT_FILTER_GPIO_P = 0,
@@ -220,12 +226,14 @@ enum msm_ir_led_cfg_type_t {
 #define CFG_IR_LED_OFF CFG_IR_LED_OFF
 #define CFG_IR_LED_ON CFG_IR_LED_ON
 
+#ifndef CONFIG_VENDOR_SMARTISAN
 enum msm_laser_led_cfg_type_t {
 	CFG_LASER_LED_INIT,
 	CFG_LASER_LED_CONTROL,
 };
 #define CFG_LASER_LED_INIT CFG_LASER_LED_INIT
 #define CFG_LASER_LED_CONTROL CFG_LASER_LED_CONTROL
+#endif
 
 enum msm_ir_cut_cfg_type_t {
 	CFG_IR_CUT_INIT = 0,
@@ -328,7 +336,9 @@ struct msm_camera_sensor_slave_info {
 	unsigned char  is_init_params_valid;
 	struct msm_sensor_init_params sensor_init_params;
 	enum msm_sensor_output_format_t output_format;
+#ifndef CONFIG_VENDOR_SMARTISAN
 	uint8_t bypass_video_node_creation;
+#endif
 };
 
 struct msm_camera_i2c_reg_array {

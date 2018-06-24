@@ -575,8 +575,10 @@ int msm_camera_get_dt_power_setting_data(struct device_node *of_node,
 				ps[i].seq_val = SENSOR_GPIO_CUSTOM1;
 			else if (!strcmp(seq_name, "sensor_gpio_custom2"))
 				ps[i].seq_val = SENSOR_GPIO_CUSTOM2;
+#ifndef CONFIG_VENDOR_SMARTISAN
 			else if (!strcmp(seq_name, "sensor_gpio_custom3"))
 				ps[i].seq_val = SENSOR_GPIO_CUSTOM3;
+#endif
 			else
 				rc = -EILSEQ;
 			break;
@@ -1080,6 +1082,7 @@ int msm_camera_init_gpio_pin_tbl(struct device_node *of_node,
 		rc = 0;
 	}
 
+#ifndef CONFIG_VENDOR_SMARTISAN
 	rc = of_property_read_u32(of_node, "qcom,gpio-custom3", &val);
 	if (rc != -EINVAL) {
 		if (rc < 0) {
@@ -1100,6 +1103,7 @@ int msm_camera_init_gpio_pin_tbl(struct device_node *of_node,
 	} else {
 		rc = 0;
 	}
+#endif
 
 	return rc;
 
