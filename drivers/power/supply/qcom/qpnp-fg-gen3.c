@@ -22,6 +22,9 @@
 #include <linux/qpnp/qpnp-revid.h>
 #include "fg-core.h"
 #include "fg-reg.h"
+#ifdef CONFIG_VENDOR_SMARTISAN
+#include "smb-lib.h"
+#endif
 
 #define FG_GEN3_DEV_NAME	"qcom,fg-gen3"
 
@@ -867,8 +870,13 @@ static int fg_batt_missing_config(struct fg_chip *chip, bool enable)
 {
 	int rc;
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+	rc = fg_masked_write(chip, BATT_INFO_BATT_MISS_CFG(chip),
+			BM_FROM_THERM_BIT|BM_FROM_BATT_ID_BIT, enable ? BM_FROM_BATT_ID_BIT : 0);
+#else
 	rc = fg_masked_write(chip, BATT_INFO_BATT_MISS_CFG(chip),
 			BM_FROM_BATT_ID_BIT, enable ? BM_FROM_BATT_ID_BIT : 0);
+#endif
 	if (rc < 0)
 		pr_err("Error in writing to %04x, rc=%d\n",
 			BATT_INFO_BATT_MISS_CFG(chip), rc);
@@ -960,6 +968,9 @@ static int fg_get_batt_profile(struct fg_chip *chip)
 		pr_err("battery cc_cv threshold unavailable, rc:%d\n", rc);
 		chip->bp.vbatt_full_mv = -EINVAL;
 	}
+#ifdef CONFIG_VENDOR_SMARTISAN
+	chip->bp.vbatt_full_mv = 4402;
+#endif
 
 	data = of_get_property(profile_node, "qcom,fg-profile-data", &len);
 	if (!data) {
@@ -1136,8 +1147,18 @@ static int fg_delta_bsoc_irq_en_cb(struct votable *votable, void *data,
 	if (enable) {
 		enable_irq(chip->irqs[BSOC_DELTA_IRQ].irq);
 		enable_irq_wake(chip->irqs[BSOC_DELTA_IRQ].irq);
+#ifdef CONFIG_VENDOR_SMARTISAN
+		chip->irq_wake = 1;
+#endif
 	} else {
+#ifdef CONFIG_VENDOR_SMARTISAN
+		if (chip->irq_wake) {
+#endif
 		disable_irq_wake(chip->irqs[BSOC_DELTA_IRQ].irq);
+#ifdef CONFIG_VENDOR_SMARTISAN
+			chip->irq_wake = 0;
+		}
+#endif
 		disable_irq_nosync(chip->irqs[BSOC_DELTA_IRQ].irq);
 	}
 
@@ -2423,6 +2444,107 @@ static int fg_get_cycle_count(struct fg_chip *chip)
 	return count;
 }
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+#define HIGH_BATTERY_OCV        4095000
+#define HIGH_BATTERY_OCV_FCC    2400000
+#define DEFAULT_BATTERY_OCV_FCC 3400000
+
+static void high_battery_ocv_work(struct fg_chip *chip)
+{
+	static bool tried_once = false;
+	int vbatt_uv,rc;
+
+	rc = fg_get_sram_prop(chip, FG_SRAM_OCV, &vbatt_uv);
+	if (rc < 0) {
+		pr_err("failed to get battery voltage, rc=%d\n", rc);
+		vbatt_uv = HIGH_BATTERY_OCV;
+	}
+
+	if (vbatt_uv >= HIGH_BATTERY_OCV) {
+		if (!tried_once) {
+			rc = high_ocv_fcc_voter(HIGH_BATTERY_OCV_FCC);
+			if (rc) {
+				pr_err("failed to set fcc %d\n", rc);
+				return;
+			}
+
+			tried_once = true;
+		}
+	} else {
+		if (tried_once) {
+			rc = high_ocv_fcc_voter(DEFAULT_BATTERY_OCV_FCC);
+			if (rc) {
+				pr_err("failed to set fcc %d\n", rc);
+				return;
+			}
+			tried_once = false;
+		}
+	}
+}
+
+#define TEMP_BELOW_NEG_0          0
+#define TEMP_POS_0_TO_POS_15      1
+#define TEMP_POS_15_TO_POS_45     2
+#define TEMP_POS_45_TO_POS_60     3
+#define TEMP_ABOVE_POS_60         4
+
+#define TEMP_POS_60_THRESHOLD  60
+#define TEMP_POS_60_THRES_MINUS_X_DEGREE 58
+
+#define TEMP_POS_45_THRESHOLD  45
+#define TEMP_POS_45_THRES_MINUS_X_DEGREE 43
+
+#define TEMP_POS_0_THRESHOLD  0
+#define TEMP_POS_0_THRES_PLUS_X_DEGREE 2
+
+#define TEMP_POS_15_THRESHOLD  15
+#define TEMP_POS_15_THRES_PLUS_X_DEGREE 17
+
+int do_jeita_state_machine(int temperature)
+{
+	static int g_temp_status = TEMP_POS_15_TO_POS_45;
+
+	if (temperature >= TEMP_POS_60_THRESHOLD) {
+		g_temp_status = TEMP_ABOVE_POS_60;
+	} else if (temperature > TEMP_POS_45_THRESHOLD) {
+		if ((g_temp_status == TEMP_ABOVE_POS_60)
+				&& (temperature > TEMP_POS_60_THRES_MINUS_X_DEGREE)) {
+			g_temp_status = TEMP_ABOVE_POS_60;
+		} else {
+			g_temp_status = TEMP_POS_45_TO_POS_60;
+		}
+	} else if (temperature > TEMP_POS_15_THRESHOLD) {
+		if ((g_temp_status == TEMP_POS_45_TO_POS_60)
+				&& (temperature > TEMP_POS_45_THRES_MINUS_X_DEGREE)) {
+			g_temp_status = TEMP_POS_45_TO_POS_60;
+		} else if ((g_temp_status == TEMP_POS_0_TO_POS_15)
+				&& (temperature < TEMP_POS_15_THRES_PLUS_X_DEGREE)) {
+			g_temp_status = TEMP_POS_0_TO_POS_15;
+		} else {
+			g_temp_status = TEMP_POS_15_TO_POS_45;
+		}
+	} else if (temperature > TEMP_POS_0_THRESHOLD) {
+		if ((g_temp_status == TEMP_BELOW_NEG_0)
+				&& (temperature < TEMP_POS_0_THRES_PLUS_X_DEGREE)) {
+			g_temp_status = TEMP_BELOW_NEG_0;
+		} else {
+			g_temp_status = TEMP_POS_0_TO_POS_15;
+		}
+	} else {
+		g_temp_status = TEMP_BELOW_NEG_0;
+	}
+	return g_temp_status;
+}
+
+static void battery_jeita_work(int batt_temp)
+{
+	int status;
+
+	status = do_jeita_state_machine(batt_temp / 10);
+	jeita_fcc_voter(status);
+}
+#endif
+
 static void status_change_work(struct work_struct *work)
 {
 	struct fg_chip *chip = container_of(work,
@@ -2435,6 +2557,9 @@ static void status_change_work(struct work_struct *work)
 		goto out;
 	}
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+	high_battery_ocv_work(chip);
+#endif
 	rc = power_supply_get_property(chip->batt_psy, POWER_SUPPLY_PROP_STATUS,
 			&prop);
 	if (rc < 0) {
@@ -2495,6 +2620,9 @@ static void status_change_work(struct work_struct *work)
 				rc);
 	}
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+	battery_jeita_work(batt_temp);
+#endif
 	fg_ttf_update(chip);
 
 out:
@@ -2782,6 +2910,32 @@ resched:
 	schedule_delayed_work(&chip->sram_dump_work,
 			msecs_to_jiffies(fg_sram_dump_period_ms));
 }
+
+#ifdef CONFIG_VENDOR_SMARTISAN
+int update_soc_period_ms = 20000;
+
+static void update_soc_work(struct work_struct *work)
+{
+	struct fg_chip *chip = container_of(work, struct fg_chip,
+			update_soc_work.work);
+	int msoc, rc = 0;
+
+	rc = fg_get_prop_capacity(chip, &msoc);
+	if (rc < 0) {
+		pr_err("Error in getting capacity, rc=%d\n", rc);
+		goto resched;
+	}
+
+	if (msoc != chip->prev_soc) {
+		chip->prev_soc = msoc;
+		if (chip->fg_psy)
+			power_supply_changed(chip->fg_psy);
+	}
+resched:
+	schedule_delayed_work(&chip->update_soc_work,
+			msecs_to_jiffies(update_soc_period_ms));
+}
+#endif
 
 static int fg_sram_dump_sysfs(const char *val, const struct kernel_param *kp)
 {
@@ -4866,6 +5020,9 @@ static int fg_gen3_probe(struct platform_device *pdev)
 	INIT_WORK(&chip->status_change_work, status_change_work);
 	INIT_DELAYED_WORK(&chip->ttf_work, ttf_work);
 	INIT_DELAYED_WORK(&chip->sram_dump_work, sram_dump_work);
+#ifdef CONFIG_VENDOR_SMARTISAN
+	INIT_DELAYED_WORK(&chip->update_soc_work, update_soc_work);
+#endif
 
 	rc = fg_memif_init(chip);
 	if (rc < 0) {
@@ -4920,6 +5077,10 @@ static int fg_gen3_probe(struct platform_device *pdev)
 	/* Keep BATT_MISSING_IRQ disabled until we require it */
 	vote(chip->batt_miss_irq_en_votable, BATT_MISS_IRQ_VOTER, false, 0);
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+	chip->irq_wake = 0;
+#endif
+
 	rc = fg_debugfs_create(chip);
 	if (rc < 0) {
 		dev_err(chip->dev, "Error in creating debugfs entries, rc:%d\n",
@@ -4944,6 +5105,10 @@ static int fg_gen3_probe(struct platform_device *pdev)
 
 	device_init_wakeup(chip->dev, true);
 	schedule_delayed_work(&chip->profile_load_work, 0);
+#ifdef CONFIG_VENDOR_SMARTISAN
+	schedule_delayed_work(&chip->update_soc_work,
+                        msecs_to_jiffies(1000));
+#endif
 
 	pr_debug("FG GEN3 driver probed successfully\n");
 	return 0;
@@ -4961,6 +5126,9 @@ static int fg_gen3_suspend(struct device *dev)
 	if (rc < 0)
 		pr_err("Error in configuring ESR timer, rc=%d\n", rc);
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+	cancel_delayed_work(&chip->update_soc_work);
+#endif
 	cancel_delayed_work_sync(&chip->ttf_work);
 	if (fg_sram_dump)
 		cancel_delayed_work_sync(&chip->sram_dump_work);
@@ -4977,6 +5145,10 @@ static int fg_gen3_resume(struct device *dev)
 		pr_err("Error in configuring ESR timer, rc=%d\n", rc);
 
 	schedule_delayed_work(&chip->ttf_work, 0);
+#ifdef CONFIG_VENDOR_SMARTISAN
+	schedule_delayed_work(&chip->update_soc_work,
+                        msecs_to_jiffies(1000));
+#endif
 	if (fg_sram_dump)
 		schedule_delayed_work(&chip->sram_dump_work,
 				msecs_to_jiffies(fg_sram_dump_period_ms));

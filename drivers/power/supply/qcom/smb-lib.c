@@ -109,7 +109,11 @@ unlock:
 
 static int smblib_get_jeita_cc_delta(struct smb_charger *chg, int *cc_delta_ua)
 {
+#ifdef CONFIG_VENDOR_SMARTISAN
+	int rc;
+#else
 	int rc, cc_minus_ua;
+#endif
 	u8 stat;
 
 	rc = smblib_read(chg, BATTERY_CHARGER_STATUS_2_REG, &stat);
@@ -119,6 +123,10 @@ static int smblib_get_jeita_cc_delta(struct smb_charger *chg, int *cc_delta_ua)
 		return rc;
 	}
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+	*cc_delta_ua = 0;
+	return 0;
+#else
 	if (!(stat & BAT_TEMP_STATUS_SOFT_LIMIT_MASK)) {
 		*cc_delta_ua = 0;
 		return 0;
@@ -133,6 +141,7 @@ static int smblib_get_jeita_cc_delta(struct smb_charger *chg, int *cc_delta_ua)
 
 	*cc_delta_ua = -cc_minus_ua;
 	return 0;
+#endif
 }
 
 int smblib_icl_override(struct smb_charger *chg, bool override)
@@ -912,7 +921,11 @@ int smblib_set_icl_current(struct smb_charger *chg, int icl_ua)
 	/* configure current */
 	if (chg->typec_mode == POWER_SUPPLY_TYPEC_SOURCE_DEFAULT
 		&& (chg->real_charger_type == POWER_SUPPLY_TYPE_USB)) {
+#ifdef CONFIG_VENDOR_SMARTISAN
+		rc = set_sdp_current(chg, 500000);
+#else
 		rc = set_sdp_current(chg, icl_ua);
+#endif
 		if (rc < 0) {
 			smblib_err(chg, "Couldn't set SDP ICL rc=%d\n", rc);
 			goto enable_icl_changed_interrupt;
@@ -1638,7 +1651,14 @@ int smblib_get_prop_batt_status(struct smb_charger *chg,
 		val->intval = POWER_SUPPLY_STATUS_FULL;
 		break;
 	case DISABLE_CHARGE:
+#ifdef CONFIG_VENDOR_SMARTISAN
+		if (get_warm_disable_charge() == true)
+			val->intval = POWER_SUPPLY_STATUS_CHARGING;
+		else
+			val->intval = POWER_SUPPLY_STATUS_NOT_CHARGING;
+#else
 		val->intval = POWER_SUPPLY_STATUS_NOT_CHARGING;
+#endif
 		break;
 	default:
 		val->intval = POWER_SUPPLY_STATUS_UNKNOWN;
@@ -1668,8 +1688,17 @@ int smblib_get_prop_batt_status(struct smb_charger *chg,
 	qnovo_en = (bool)(pt_en_cmd & QNOVO_PT_ENABLE_CMD_BIT);
 
 	/* ignore stat7 when qnovo is enabled */
+#ifdef CONFIG_VENDOR_SMARTISAN
+	if (!qnovo_en && !stat) {
+		if (get_warm_disable_charge() == true)
+			val->intval = POWER_SUPPLY_STATUS_CHARGING;
+		else
+			val->intval = POWER_SUPPLY_STATUS_NOT_CHARGING;
+	}
+#else
 	if (!qnovo_en && !stat)
 		val->intval = POWER_SUPPLY_STATUS_NOT_CHARGING;
+#endif
 
 	return 0;
 }
@@ -1907,6 +1936,136 @@ int smblib_set_prop_batt_capacity(struct smb_charger *chg,
 	return 0;
 }
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+#define HVDCP3_THERM_USBIN_5V 5500
+#define HVDCP3_THERM_USBIN_6V 6500
+#define HVDCP3_THERM_USBIN_7V 7500
+#define HVDCP3_THERM_USBIN_8V 8500
+#define ERR_USBIN_VOLTAGE 9000
+
+static int smart_therm_get_mitigation(struct smb_charger *chg, int therm_lvl)
+{
+	int vbus, rc = 0, therm_ma = 0;
+	union power_supply_propval pval;
+
+	rc = power_supply_get_property(chg->usb_psy,
+			POWER_SUPPLY_PROP_VOLTAGE_NOW,
+			&pval);
+	if (rc < 0) {
+		smblib_err(chg,"Couldn't get usb voltage rc=%d\n",rc);
+		pval.intval = ERR_USBIN_VOLTAGE;
+	}
+
+	vbus = pval.intval / 1000;
+
+	if (chg->usb_psy_desc.type == POWER_SUPPLY_TYPE_USB_PD || chg->usb_psy_desc.type == POWER_SUPPLY_TYPE_USB_HVDCP_3) {
+		if (vbus < HVDCP3_THERM_USBIN_5V)
+			therm_ma = (int)chg->thermal_mitigation_usb_5v[therm_lvl];
+		else if (vbus < HVDCP3_THERM_USBIN_6V)
+			therm_ma = (int)chg->thermal_mitigation_usb_6v[therm_lvl];
+		else if (vbus < HVDCP3_THERM_USBIN_7V)
+			therm_ma = (int)chg->thermal_mitigation_usb_7v[therm_lvl];
+		else if (vbus < HVDCP3_THERM_USBIN_8V)
+			therm_ma = (int)chg->thermal_mitigation_usb_8v[therm_lvl];
+		else
+			therm_ma = (int)chg->thermal_mitigation_usb_9v[therm_lvl];
+	} else if ((chg->usb_psy_desc.type == POWER_SUPPLY_TYPE_USB_HVDCP) && (vbus > 8000)) {
+		therm_ma = (int)chg->thermal_mitigation_usb_9v[therm_lvl];
+	} else {
+		therm_ma = (int)chg->thermal_mitigation_usb_5v[therm_lvl];
+	}
+
+	printk("chg->system_temp_level= %d  therm_lvl = %d therm_ma = %d  vbus = %d \n", chg->system_temp_level,therm_lvl,therm_ma,vbus);
+
+	return therm_ma;
+}
+
+#define THERM_ADJ_WORK_MS 10000
+static void smart_therm_adjust_work(struct work_struct *work)
+{
+	struct smb_charger *chg = container_of(work, struct smb_charger,
+			therm_adjust_work.work);
+
+	int rc = 0;
+	int therm_icl_ma;
+	int fb_on_lvl[] = {0,1,2,3,5,8,9,10};
+	int kernel_lvl_sel_icl = 0;
+
+	union power_supply_propval pval;
+
+	rc = power_supply_get_property(chg->usb_psy,
+			POWER_SUPPLY_PROP_PRESENT,
+			&pval);
+	if (rc < 0) {
+		smblib_err(chg,"Couldn't get usb present rc=%d\n",rc);
+		goto skip;
+	}
+
+	if (!pval.intval) {
+		goto skip;
+	}
+
+	vote(chg->fcc_votable, THERMAL_DAEMON_VOTER, false, 0);
+	kernel_lvl_sel_icl = fb_on_lvl[chg->system_temp_level];
+	if(kernel_lvl_sel_icl == 0) {
+		vote(chg->usb_icl_votable, THERMAL_DAEMON_VOTER, false, 0);
+		goto skip;
+	}
+
+	therm_icl_ma = smart_therm_get_mitigation(chg, kernel_lvl_sel_icl);
+	vote(chg->usb_icl_votable,THERMAL_DAEMON_VOTER, true, therm_icl_ma * 1000);
+
+skip:
+	schedule_delayed_work(&chg->therm_adjust_work,
+			msecs_to_jiffies(THERM_ADJ_WORK_MS));
+}
+
+/*
+	    fcc <3500 3200 2800 2400 2000 1500 1000 500>;
+ vbus<5.5v  icl <2800 2600 2400 2200 2000 1800 1600 1400 1200 1000 0>;
+ vbus<6.5v  icl <2300 2200 2000 1800 1700 1500 1300 1200 1000 800  0>;
+ vbus<7.5v  icl <2000 1900 1700 1600 1400 1300 1100 1000 900  700  0>;
+ vbus<8.5v  icl <1800 1600 1500 1400 1300 1100 1000 900  800  600  0>;
+ vbus<9.5v  icl <1500 1400 1300 1200 1100 1000 900  800  700  600  0>;
+ */
+int smblib_set_prop_system_temp_level(struct smb_charger *chg,
+				const union power_supply_propval *val)
+{
+	int thermal_fcc_ma;
+	int fb_off_lvl[] = {0,1,2,3,4,5,6,7};
+	int kernel_lvl_sel_fcc = 0;
+
+	if ((val->intval < 0) || (chg->thermal_levels <= 0) || (chg->thermal_levels_usb <= 0))
+		return -EINVAL;
+
+	mutex_lock(&chg->therm_lvl_lock);
+	chg->system_temp_level = (val->intval >= 8) ? 7 : val->intval;
+	if (chg->fb_ready) {
+		if(chg->therm_adjust_work_en == 0) {
+			chg->therm_adjust_work_en = 1;
+			schedule_delayed_work(&chg->therm_adjust_work, msecs_to_jiffies(1000));
+			printk("start  therm_adjust_work!!! \n");
+		}
+	} else {
+		if (chg->therm_adjust_work_en == 1) {
+			chg->therm_adjust_work_en = 0;
+			cancel_delayed_work_sync(&chg->therm_adjust_work);
+			printk(" stop  therm_adjust_work!!! \n");
+		}
+
+		vote(chg->usb_icl_votable, THERMAL_DAEMON_VOTER, false, 0);
+		kernel_lvl_sel_fcc = fb_off_lvl[chg->system_temp_level];
+		thermal_fcc_ma = (int)chg->thermal_mitigation[kernel_lvl_sel_fcc];
+		if (kernel_lvl_sel_fcc == 0)
+			vote(chg->fcc_votable, THERMAL_DAEMON_VOTER, false, 0);
+		else
+			vote(chg->fcc_votable, THERMAL_DAEMON_VOTER, true, thermal_fcc_ma * 1000);
+	}
+
+	mutex_unlock(&chg->therm_lvl_lock);
+	return 0;
+}
+#else
 int smblib_set_prop_system_temp_level(struct smb_charger *chg,
 				const union power_supply_propval *val)
 {
@@ -1936,6 +2095,7 @@ int smblib_set_prop_system_temp_level(struct smb_charger *chg,
 			chg->thermal_mitigation[chg->system_temp_level]);
 	return 0;
 }
+#endif
 
 int smblib_set_prop_charge_qnovo_enable(struct smb_charger *chg,
 				  const union power_supply_propval *val)
@@ -2534,7 +2694,12 @@ int smblib_get_prop_die_health(struct smb_charger *chg,
 
 #define SDP_CURRENT_UA			500000
 #define CDP_CURRENT_UA			1500000
+#ifdef CONFIG_VENDOR_SMARTISAN
+#define DCP_CURRENT_UA			1750000
+#define FLOAT_CURRENT_UA		1500000
+#else
 #define DCP_CURRENT_UA			1500000
+#endif
 #define HVDCP_CURRENT_UA		3000000
 #define TYPEC_DEFAULT_CURRENT_UA	900000
 #define TYPEC_MEDIUM_CURRENT_UA		1500000
@@ -3005,6 +3170,7 @@ int smblib_set_prop_pd_in_hard_reset(struct smb_charger *chg,
 	return rc;
 }
 
+#ifndef CONFIG_VENDOR_SMARTISAN
 static int smblib_recover_from_soft_jeita(struct smb_charger *chg)
 {
 	u8 stat_1, stat_2;
@@ -3049,6 +3215,7 @@ static int smblib_recover_from_soft_jeita(struct smb_charger *chg)
 
 	return 0;
 }
+#endif
 
 /***********************
 * USB MAIN PSY GETTERS *
@@ -3110,13 +3277,26 @@ int smblib_get_charge_current(struct smb_charger *chg,
 
 	if (non_compliant) {
 		switch (apsd_result->bit) {
+#ifdef CONFIG_VENDOR_SMARTISAN
+		case SDP_CHARGER_BIT:
+			current_ua = SDP_CURRENT_UA;
+			break;
+#endif
 		case CDP_CHARGER_BIT:
 			current_ua = CDP_CURRENT_UA;
 			break;
 		case DCP_CHARGER_BIT:
+#ifdef CONFIG_VENDOR_SMARTISAN
+			current_ua = DCP_CURRENT_UA;
+			break;
+#endif
 		case OCP_CHARGER_BIT:
 		case FLOAT_CHARGER_BIT:
+#ifdef CONFIG_VENDOR_SMARTISAN
+			current_ua = FLOAT_CURRENT_UA;
+#else
 			current_ua = DCP_CURRENT_UA;
+#endif
 			break;
 		default:
 			current_ua = 0;
@@ -3130,13 +3310,26 @@ int smblib_get_charge_current(struct smb_charger *chg,
 	switch (typec_source_rd) {
 	case POWER_SUPPLY_TYPEC_SOURCE_DEFAULT:
 		switch (apsd_result->bit) {
+#ifdef CONFIG_VENDOR_SMARTISAN
+		case SDP_CHARGER_BIT:
+			current_ua = SDP_CURRENT_UA;
+			break;
+#endif
 		case CDP_CHARGER_BIT:
 			current_ua = CDP_CURRENT_UA;
 			break;
 		case DCP_CHARGER_BIT:
+#ifdef CONFIG_VENDOR_SMARTISAN
+			current_ua = DCP_CURRENT_UA;
+			break;
+#endif
 		case OCP_CHARGER_BIT:
 		case FLOAT_CHARGER_BIT:
+#ifdef CONFIG_VENDOR_SMARTISAN
+			current_ua = FLOAT_CURRENT_UA;
+#else
 			current_ua = chg->default_icl_ua;
+#endif
 			break;
 		default:
 			current_ua = 0;
@@ -3241,6 +3434,7 @@ irqreturn_t smblib_handle_batt_temp_changed(int irq, void *data)
 {
 	struct smb_irq_data *irq_data = data;
 	struct smb_charger *chg = irq_data->parent_data;
+#ifndef CONFIG_VENDOR_SMARTISAN
 	int rc;
 
 	rc = smblib_recover_from_soft_jeita(chg);
@@ -3249,6 +3443,7 @@ irqreturn_t smblib_handle_batt_temp_changed(int irq, void *data)
 				rc);
 		return IRQ_HANDLED;
 	}
+#endif
 
 	rerun_election(chg->fcc_votable);
 	power_supply_changed(chg->batt_psy);
@@ -3342,7 +3537,11 @@ void smblib_usb_plugin_hard_reset_locked(struct smb_charger *chg)
 					vbus_rising ? "attached" : "detached");
 }
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+#define PL_DELAY_MS			5000
+#else
 #define PL_DELAY_MS			30000
+#endif
 void smblib_usb_plugin_locked(struct smb_charger *chg)
 {
 	int rc;
@@ -3637,8 +3836,10 @@ static void smblib_handle_hvdcp_detect_done(struct smb_charger *chg,
 
 static void smblib_force_legacy_icl(struct smb_charger *chg, int pst)
 {
+#ifndef CONFIG_VENDOR_SMARTISAN
 	int typec_mode;
 	int rp_ua;
+#endif
 
 	/* while PD is active it should have complete ICL control */
 	if (chg->pd_active)
@@ -3660,16 +3861,24 @@ static void smblib_force_legacy_icl(struct smb_charger *chg, int pst)
 		vote(chg->usb_icl_votable, LEGACY_UNKNOWN_VOTER, true, 1500000);
 		break;
 	case POWER_SUPPLY_TYPE_USB_DCP:
+#ifdef CONFIG_VENDOR_SMARTISAN
+		vote(chg->usb_icl_votable, LEGACY_UNKNOWN_VOTER, true, DCP_CURRENT_UA);
+#else
 		typec_mode = smblib_get_prop_typec_mode(chg);
 		rp_ua = get_rp_based_dcp_current(chg, typec_mode);
 		vote(chg->usb_icl_votable, LEGACY_UNKNOWN_VOTER, true, rp_ua);
+#endif
 		break;
 	case POWER_SUPPLY_TYPE_USB_FLOAT:
 		/*
 		 * limit ICL to 100mA, the USB driver will enumerate to check
 		 * if this is a SDP and appropriately set the current
 		 */
+#ifdef CONFIG_VENDOR_SMARTISAN
+		vote(chg->usb_icl_votable, LEGACY_UNKNOWN_VOTER, true, FLOAT_CURRENT_UA);
+#else
 		vote(chg->usb_icl_votable, LEGACY_UNKNOWN_VOTER, true, 100000);
+#endif
 		break;
 	case POWER_SUPPLY_TYPE_USB_HVDCP:
 	case POWER_SUPPLY_TYPE_USB_HVDCP_3:
@@ -4822,6 +5031,44 @@ static void smblib_iio_deinit(struct smb_charger *chg)
 		iio_channel_release(chg->iio.batt_i_chan);
 }
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+#define SAFETY_TIMER 0x10A0
+int safety_timer_enabled = 1;
+
+static ssize_t charger_show_registers(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	return snprintf(buf, PAGE_SIZE, "%d\n", safety_timer_enabled);
+}
+
+static ssize_t charger_store_registers(struct device *dev,
+	struct device_attribute *attr,
+	const char *buf, size_t size)
+{
+	struct smb_charger *chg = dev_get_drvdata(dev);
+
+	sscanf(buf, "%d", &safety_timer_enabled);
+
+	if (safety_timer_enabled)
+		smblib_write(chg,SAFETY_TIMER, 0x03);
+	else
+		smblib_write(chg,SAFETY_TIMER, 0x02);
+
+	return size;
+}
+
+static DEVICE_ATTR(safety_timer_enabled, 0660, charger_show_registers, charger_store_registers);
+
+static struct attribute *charger_attributes[] = {
+	&dev_attr_safety_timer_enabled.attr,
+	NULL,
+};
+
+static const struct attribute_group charger_attr_group = {
+	.attrs = charger_attributes,
+};
+#endif
+
 int smblib_init(struct smb_charger *chg)
 {
 	int rc = 0;
@@ -4830,6 +5077,9 @@ int smblib_init(struct smb_charger *chg)
 	mutex_init(&chg->write_lock);
 	mutex_init(&chg->otg_oc_lock);
 	mutex_init(&chg->vconn_oc_lock);
+#ifdef CONFIG_VENDOR_SMARTISAN
+	mutex_init(&chg->therm_lvl_lock);
+#endif
 	INIT_WORK(&chg->bms_update_work, bms_update_work);
 	INIT_WORK(&chg->rdstd_cc2_detach_work, rdstd_cc2_detach_work);
 	INIT_DELAYED_WORK(&chg->hvdcp_detect_work, smblib_hvdcp_detect_work);
@@ -4842,8 +5092,28 @@ int smblib_init(struct smb_charger *chg)
 	INIT_WORK(&chg->legacy_detection_work, smblib_legacy_detection_work);
 	INIT_DELAYED_WORK(&chg->uusb_otg_work, smblib_uusb_otg_work);
 	INIT_DELAYED_WORK(&chg->bb_removal_work, smblib_bb_removal_work);
+#ifdef CONFIG_VENDOR_SMARTISAN
+	INIT_DELAYED_WORK(&chg->therm_adjust_work, smart_therm_adjust_work);
+#endif
 	chg->fake_capacity = -EINVAL;
 	chg->fake_input_current_limited = -EINVAL;
+
+#ifdef CONFIG_VENDOR_SMARTISAN
+	chg->therm_adjust_work_en = 0;
+	smblib_write(chg, JEITA_EN_CFG_REG, 0x00);
+#endif
+
+#ifdef CONFIG_VENDOR_SMARTISAN
+	rc = sysfs_create_group(&chg->dev->kobj, &charger_attr_group);
+	if (rc) {
+		pr_err("failed to register sysfs. err \n");
+	}
+
+	rc = sysfs_create_link(NULL, &chg->dev->kobj, "smblib_charger");
+	if (rc) {
+		pr_err("failed to sysfs_create_link sysfs. err\n");
+	}
+#endif
 
 	switch (chg->mode) {
 	case PARALLEL_MASTER:

@@ -654,7 +654,15 @@ static int usb_icl_vote_callback(struct votable *votable, void *data,
 			POWER_SUPPLY_PROP_CURRENT_MAX,
 			&pval);
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+	if (icl_ua > 1400000) {
+#endif
 	vote(chip->pl_disable_votable, ICL_CHANGE_VOTER, false, 0);
+#ifdef CONFIG_VENDOR_SMARTISAN
+	} else {
+		vote(chip->pl_disable_votable, ICL_CHANGE_VOTER, true, 0);
+	}
+#endif
 
 	return 0;
 }
