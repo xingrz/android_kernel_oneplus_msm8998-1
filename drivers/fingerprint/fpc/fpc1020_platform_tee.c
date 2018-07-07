@@ -37,6 +37,11 @@
 #include <linux/regulator/consumer.h>
 #include <linux/wakelock.h>
 
+#ifdef CONFIG_FB
+#include <linux/fb.h>
+#include <linux/notifier.h>
+#endif
+
 #define FPC_TTW_HOLD_TIME 1000
 
 #define RESET_LOW_SLEEP_MIN_US 5000
@@ -82,6 +87,11 @@ struct fpc1020_data {
 	struct mutex lock; /* To set/get exported values in sysfs */
 	bool prepared;
 	atomic_t wakeup_enabled; /* Used both in ISR and non-ISR */
+
+	int screen_state;
+#if defined(CONFIG_FB)
+	struct notifier_block fb_notif;
+#endif
 };
 
 static int vreg_setup(struct fpc1020_data *fpc1020, const char *name,
@@ -445,6 +455,26 @@ static const struct attribute_group attribute_group = {
 	.attrs = attributes,
 };
 
+#if defined(CONFIG_FB)
+static int fb_notifier_callback(struct notifier_block *self, unsigned long event, void *data)
+{
+	struct fpc1020_data *fpc1020 = container_of(self, struct fpc1020_data, fb_notif);
+	struct fb_event *evdata = data;
+	int *blank = evdata->data;
+
+	if (event != FB_EARLY_EVENT_BLANK)
+		return 0;
+
+	if (*blank == FB_BLANK_UNBLANK) {
+		fpc1020->screen_state = 1;
+	} else if (*blank == FB_BLANK_POWERDOWN) {
+		fpc1020->screen_state = 0;
+	}
+
+	return 0;
+}
+#endif
+
 static irqreturn_t fpc1020_irq_handler(int irq, void *handle)
 {
 	struct fpc1020_data *fpc1020 = handle;
@@ -551,6 +581,14 @@ static int fpc1020_probe(struct platform_device *pdev)
 	rc = select_pin_ctl(fpc1020, "fpc1020_irq_active");
 	if (rc)
 		goto exit;
+
+#if defined(CONFIG_FB)
+	fpc1020->fb_notif.notifier_call = fb_notifier_callback;
+	rc = fb_register_client(&fpc1020->fb_notif);
+	if(rc)
+		dev_err(fpc1020->dev, "Unable to register fb_notifier: %d\n", rc);
+	fpc1020->screen_state = 1;
+#endif
 
 	atomic_set(&fpc1020->wakeup_enabled, 0);
 
