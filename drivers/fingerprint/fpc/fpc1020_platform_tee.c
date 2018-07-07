@@ -24,6 +24,7 @@
  * as published by the Free Software Foundation.
  */
 
+#include <asm/uaccess.h>
 #include <linux/atomic.h>
 #include <linux/delay.h>
 #include <linux/gpio.h>
@@ -36,6 +37,7 @@
 #include <linux/platform_device.h>
 #include <linux/regulator/consumer.h>
 #include <linux/wakelock.h>
+#include <linux/proc_fs.h>
 
 #ifdef CONFIG_FB
 #include <linux/fb.h>
@@ -92,7 +94,16 @@ struct fpc1020_data {
 #if defined(CONFIG_FB)
 	struct notifier_block fb_notif;
 #endif
+	struct work_struct pm_work;
+
+	bool irq_enabled;
+	spinlock_t irq_lock;
+	struct completion irq_sent;
+
+	bool suspended;
 };
+
+static struct fpc1020_data *fpc1020_g = NULL;
 
 static int vreg_setup(struct fpc1020_data *fpc1020, const char *name,
 	bool enable)
@@ -419,9 +430,20 @@ static ssize_t irq_get(struct device *dev,
 	char *buf)
 {
 	struct fpc1020_data *fpc1020 = dev_get_drvdata(dev);
-	int irq = gpio_get_value(fpc1020->irq_gpio);
+	bool irq_enabled;
+	int irq;
+	ssize_t count;
 
-	return scnprintf(buf, PAGE_SIZE, "%i\n", irq);
+	spin_lock(&fpc1020->irq_lock);
+	irq_enabled = fpc1020->irq_enabled;
+	spin_unlock(&fpc1020->irq_lock);
+
+	irq = irq_enabled && gpio_get_value(fpc1020->irq_gpio);
+	count = scnprintf(buf, PAGE_SIZE, "%i\n", irq);
+
+	complete(&fpc1020->irq_sent);
+
+	return count;
 }
 
 /**
@@ -455,6 +477,82 @@ static const struct attribute_group attribute_group = {
 	.attrs = attributes,
 };
 
+static void set_fpc_irq(struct fpc1020_data *fpc1020, bool enable)
+{
+	bool irq_enabled;
+
+	spin_lock(&fpc1020->irq_lock);
+	irq_enabled = fpc1020->irq_enabled;
+	fpc1020->irq_enabled = enable;
+	spin_unlock(&fpc1020->irq_lock);
+
+	if (enable == irq_enabled)
+		return;
+
+	if (enable)
+		enable_irq(gpio_to_irq(fpc1020->irq_gpio));
+	else
+		disable_irq(gpio_to_irq(fpc1020->irq_gpio));
+}
+
+static ssize_t suspend_set(struct file *file,
+	const char __user *buf, size_t count, loff_t *lo)
+{
+	char page[10] = {0};
+	int rc, val;
+
+	if (!fpc1020_g) {
+		return -ENODEV;
+	}
+
+	rc = copy_from_user(page, buf, count);
+	if (rc) {
+		return -EINVAL;
+	}
+
+	rc = kstrtoint(page, 10, &val);
+	if (rc)
+		return -EINVAL;
+
+	fpc1020_g->suspended = !!val;
+
+	if (!fpc1020_g->screen_state)
+		set_fpc_irq(fpc1020_g, !fpc1020_g->suspended);
+
+	return count;
+}
+
+static ssize_t suspend_get(struct file *file,
+	char __user *buf, size_t count, loff_t *lo)
+{
+	char page[10];
+
+	if (!fpc1020_g) {
+		return -ENODEV;
+	}
+
+	sprintf(page, "%d\n", fpc1020_g->suspended ? 1 : 0);
+
+	return simple_read_from_buffer(buf, count, lo, page, strlen(page));
+}
+
+static const struct file_operations proc_suspend = {
+	.write = suspend_set,
+	.read = suspend_get,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+};
+
+static void fpc1020_suspend_resume(struct work_struct *work)
+{
+	struct fpc1020_data *fpc1020 =
+		container_of(work, typeof(*fpc1020), pm_work);
+
+	if (fpc1020->screen_state) {
+		set_fpc_irq(fpc1020, true);
+	}
+}
+
 #if defined(CONFIG_FB)
 static int fb_notifier_callback(struct notifier_block *self, unsigned long event, void *data)
 {
@@ -467,8 +565,10 @@ static int fb_notifier_callback(struct notifier_block *self, unsigned long event
 
 	if (*blank == FB_BLANK_UNBLANK) {
 		fpc1020->screen_state = 1;
+		queue_work(system_highpri_wq, &fpc1020->pm_work);
 	} else if (*blank == FB_BLANK_POWERDOWN) {
 		fpc1020->screen_state = 0;
+		queue_work(system_highpri_wq, &fpc1020->pm_work);
 	}
 
 	return 0;
@@ -479,14 +579,15 @@ static irqreturn_t fpc1020_irq_handler(int irq, void *handle)
 {
 	struct fpc1020_data *fpc1020 = handle;
 
-	dev_dbg(fpc1020->dev, "%s\n", __func__);
-
-	if (atomic_read(&fpc1020->wakeup_enabled)) {
-		wake_lock_timeout(&fpc1020->ttw_wl,
-					msecs_to_jiffies(FPC_TTW_HOLD_TIME));
-	}
-
 	sysfs_notify(&fpc1020->dev->kobj, NULL, dev_attr_irq.attr.name);
+
+	reinit_completion(&fpc1020->irq_sent);
+	wait_for_completion_timeout(&fpc1020->irq_sent, msecs_to_jiffies(100));
+
+	if (fpc1020->screen_state || !atomic_read(&fpc1020->wakeup_enabled))
+		return IRQ_HANDLED;
+
+	wake_lock_timeout(&fpc1020->ttw_wl, msecs_to_jiffies(FPC_TTW_HOLD_TIME));
 
 	return IRQ_HANDLED;
 }
@@ -517,6 +618,7 @@ static int fpc1020_request_named_gpio(struct fpc1020_data *fpc1020,
 static int fpc1020_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
+	struct proc_dir_entry *proc_dir;
 	int rc = 0;
 	size_t i;
 	int irqf;
@@ -582,6 +684,8 @@ static int fpc1020_probe(struct platform_device *pdev)
 	if (rc)
 		goto exit;
 
+	INIT_WORK(&fpc1020->pm_work, fpc1020_suspend_resume);
+
 #if defined(CONFIG_FB)
 	fpc1020->fb_notif.notifier_call = fb_notifier_callback;
 	rc = fb_register_client(&fpc1020->fb_notif);
@@ -589,6 +693,9 @@ static int fpc1020_probe(struct platform_device *pdev)
 		dev_err(fpc1020->dev, "Unable to register fb_notifier: %d\n", rc);
 	fpc1020->screen_state = 1;
 #endif
+
+	spin_lock_init(&fpc1020->irq_lock);
+	fpc1020->irq_enabled = true;
 
 	atomic_set(&fpc1020->wakeup_enabled, 0);
 
@@ -599,6 +706,7 @@ static int fpc1020_probe(struct platform_device *pdev)
 	}
 
 	mutex_init(&fpc1020->lock);
+	init_completion(&fpc1020->irq_sent);
 	rc = devm_request_threaded_irq(dev, gpio_to_irq(fpc1020->irq_gpio),
 			NULL, fpc1020_irq_handler, irqf,
 			dev_name(dev), fpc1020);
@@ -621,6 +729,9 @@ static int fpc1020_probe(struct platform_device *pdev)
 		goto exit;
 	}
 
+	proc_dir = proc_mkdir("fingerprint", NULL);
+	proc_create_data("suspend", S_IWUSR, proc_dir, &proc_suspend, NULL);
+
 	if (of_property_read_bool(dev->of_node, "fpc,enable-on-boot")) {
 		dev_info(dev, "Enabling hardware\n");
 		(void)device_prepare(fpc1020, true);
@@ -629,6 +740,7 @@ static int fpc1020_probe(struct platform_device *pdev)
 	rc = hw_reset(fpc1020);
 
 	dev_info(dev, "%s: ok\n", __func__);
+	fpc1020_g = fpc1020;
 
 exit:
 	return rc;
