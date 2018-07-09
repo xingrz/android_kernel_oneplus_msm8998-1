@@ -43,10 +43,6 @@ static int __read_mostly did_panic;
 
 static struct task_struct *watchdog_task;
 
-#ifdef CONFIG_VENDOR_SMARTISAN
-static char* check_hang_task = "f2fs_gc";
-#endif
-
 /*
  * Should we panic (and reboot, if panic_timeout= is set) when a
  * hung task is detected:
@@ -182,17 +178,8 @@ static void check_hung_uninterruptible_tasks(unsigned long timeout)
 				goto unlock;
 		}
 		/* use "==" to skip the TASK_KILLABLE tasks waiting on NFS */
-#ifdef CONFIG_VENDOR_SMARTISAN
-		if (t->state == TASK_UNINTERRUPTIBLE) {
-			if (strlen(t->comm) >= strlen(check_hang_task) &&
-				!strncmp(t->comm, check_hang_task, strlen(check_hang_task))) {
-					check_hung_task(t, timeout);
-			}
-		}
-#else
 		if (t->state == TASK_UNINTERRUPTIBLE)
 			check_hung_task(t, timeout);
-#endif
 	}
  unlock:
 	rcu_read_unlock();
