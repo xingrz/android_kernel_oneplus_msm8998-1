@@ -1132,11 +1132,12 @@ static int max98927_feedforward_event(struct snd_soc_dapm_widget *w,
 					pr_info("%s: valid ref_RDC=%d from calibration file\n",
 						__func__, max98927->ref_RDC);
 				} else {
-					pr_info("%s: invalid ref_RDC=%d and impedance: 0x%x, so mute speaker\n",
-						__func__, max98927->ref_RDC, impedance);
-					max98927->ref_RDC = SPK_MUTE_VALUE;
-					*payload = SPK_MUTE_VALUE;
-					*(payload+1) = SPK_MUTE_VALUE;
+					pr_info("%s: invalid ref_RDC=%d and impedance: 0x%x, use RDC_MIN+1=0x%x as default\n",
+						__func__, max98927->ref_RDC, impedance, RDC_MIN + 1);
+					impedance = RDC_MIN + 1;
+					max98927->ref_RDC = impedance;
+					*payload = impedance;
+					*(payload+1) = impedance;
 				}
 			} else {
 				pr_info("%s: valid ref_RDC=%d \n", __func__, max98927->ref_RDC);
