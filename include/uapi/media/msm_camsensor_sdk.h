@@ -48,18 +48,10 @@
 #define MSM_EEPROM_MEMORY_MAP_MAX_SIZE  80
 #define MSM_EEPROM_MAX_MEM_MAP_CNT      8
 
-#ifndef CONFIG_VENDOR_SMARTISAN
-#define MSM_SENSOR_BYPASS_VIDEO_NODE    1
-#endif
-
-//JiGaoping add for write data to eeprom 2016-12-02
-#ifdef CONFIG_VENDOR_SMARTISAN
+//begin: JiGaoping add for write data to eeprom 2016-12-02
 #define MSM_EEPROM_WRITE_MAP_MAX_SIZE   80
 #define MSM_EEPROM_MAX_WRITE_MAP_CNT    8
-#endif
-
-#define FRONT_AUX_SENSOR_SUPPORT
-
+//end: JiGaoping add for write data to eeprom 2016-12-02
 enum msm_sensor_camera_id_t {
 	CAMERA_0,
 	CAMERA_1,
@@ -80,7 +72,6 @@ enum camb_position_t {
 	BACK_CAMERA_B,
 	FRONT_CAMERA_B,
 	AUX_CAMERA_B = 0x100,
-	FRONT_AUX_CAMERA_B,
 	INVALID_CAMERA_B,
 };
 
@@ -96,18 +87,14 @@ enum msm_camera_i2c_reg_addr_type {
 	MSM_CAMERA_I2C_BYTE_ADDR = 1,
 	MSM_CAMERA_I2C_WORD_ADDR,
 	MSM_CAMERA_I2C_3B_ADDR,
-	MSM_CAMERA_I2C_DWORD_ADDR,
 	MSM_CAMERA_I2C_ADDR_TYPE_MAX,
 };
-#define MSM_CAMERA_I2C_DWORD_ADDR MSM_CAMERA_I2C_DWORD_ADDR
 
 enum msm_camera_i2c_data_type {
 	MSM_CAMERA_I2C_BYTE_DATA = 1,
 	MSM_CAMERA_I2C_WORD_DATA,
 	MSM_CAMERA_I2C_DWORD_DATA,
-#ifdef CONFIG_VENDOR_SMARTISAN
 	MSM_CAMERA_I2C_SEQ_DATA,  //JiGaoping add for write data to eeprom 2016-12-02
-#endif
 	MSM_CAMERA_I2C_SET_BYTE_MASK,
 	MSM_CAMERA_I2C_UNSET_BYTE_MASK,
 	MSM_CAMERA_I2C_SET_WORD_MASK,
@@ -129,14 +116,8 @@ enum msm_sensor_power_seq_gpio_t {
 	SENSOR_GPIO_FL_RESET,
 	SENSOR_GPIO_CUSTOM1,
 	SENSOR_GPIO_CUSTOM2,
-#ifndef CONFIG_VENDOR_SMARTISAN
-	SENSOR_GPIO_CUSTOM3,
-#endif
 	SENSOR_GPIO_MAX,
 };
-#ifndef CONFIG_VENDOR_SMARTISAN
-#define SENSOR_GPIO_CUSTOM3 SENSOR_GPIO_CUSTOM3
-#endif
 
 enum msm_ir_cut_filter_gpio_t {
 	IR_CUT_FILTER_GPIO_P = 0,
@@ -226,15 +207,6 @@ enum msm_ir_led_cfg_type_t {
 #define CFG_IR_LED_OFF CFG_IR_LED_OFF
 #define CFG_IR_LED_ON CFG_IR_LED_ON
 
-#ifndef CONFIG_VENDOR_SMARTISAN
-enum msm_laser_led_cfg_type_t {
-	CFG_LASER_LED_INIT,
-	CFG_LASER_LED_CONTROL,
-};
-#define CFG_LASER_LED_INIT CFG_LASER_LED_INIT
-#define CFG_LASER_LED_CONTROL CFG_LASER_LED_CONTROL
-#endif
-
 enum msm_ir_cut_cfg_type_t {
 	CFG_IR_CUT_INIT = 0,
 	CFG_IR_CUT_RELEASE,
@@ -316,9 +288,7 @@ struct msm_sensor_id_info_t {
 	unsigned short sensor_id_reg_addr;
 	unsigned short sensor_id;
 	unsigned short sensor_id_mask;
-#ifdef CONFIG_VENDOR_SMARTISAN
 	unsigned char module_id;
-#endif
 };
 
 struct msm_camera_sensor_slave_info {
@@ -336,9 +306,6 @@ struct msm_camera_sensor_slave_info {
 	unsigned char  is_init_params_valid;
 	struct msm_sensor_init_params sensor_init_params;
 	enum msm_sensor_output_format_t output_format;
-#ifndef CONFIG_VENDOR_SMARTISAN
-	uint8_t bypass_video_node_creation;
-#endif
 };
 
 struct msm_camera_i2c_reg_array {
@@ -392,7 +359,6 @@ struct msm_camera_csiphy_params {
 	unsigned char csid_core;
 	unsigned int csiphy_clk;
 	unsigned char csi_3phase;
-	uint64_t data_rate;
 };
 
 struct msm_camera_i2c_seq_reg_array {
@@ -454,8 +420,7 @@ struct msm_camera_i2c_reg_setting_array {
 	unsigned short delay;
 };
 
-//JiGaoping add for write data to eeprom 2016-12-02
-#ifdef CONFIG_VENDOR_SMARTISAN
+//begin: JiGaoping add for write data to eeprom 2016-12-02
 struct msm_eeprom_i2c_seq_reg_array {
 	unsigned short reg_addr;
 	enum msm_camera_i2c_reg_addr_type addr_type;
@@ -476,6 +441,5 @@ struct msm_eeprom_write_map_array {
 	struct msm_eeprom_write_map_t write_map[MSM_EEPROM_MAX_WRITE_MAP_CNT];
 	uint32_t msm_size_of_max_mappings;
 };
-#endif
-
+//end: JiGaoping add for write data to eeprom 2016-12-02
 #endif

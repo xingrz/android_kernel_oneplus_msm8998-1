@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2014, 2017, The Linux Foundataion. All rights reserved.
+/* Copyright (c) 2011-2014, The Linux Foundataion. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -424,7 +424,7 @@ int msm_camera_config_vreg(struct device *dev, struct camera_vreg_t *cam_vreg,
 			curr_vreg = &cam_vreg[j];
 			reg_ptr[j] = regulator_get(dev,
 				curr_vreg->reg_name);
-			if (IS_ERR_OR_NULL(reg_ptr[j])) {
+			if (IS_ERR(reg_ptr[j])) {
 				pr_err("%s: %s get failed\n",
 					 __func__,
 					 curr_vreg->reg_name);
@@ -531,7 +531,7 @@ int msm_camera_enable_vreg(struct device *dev, struct camera_vreg_t *cam_vreg,
 					continue;
 			} else
 				j = i;
-			if (IS_ERR_OR_NULL(reg_ptr[j])) {
+			if (IS_ERR(reg_ptr[j])) {
 				pr_err("%s: %s null regulator\n",
 					__func__, cam_vreg[j].reg_name);
 				goto disable_vreg;
@@ -556,16 +556,12 @@ int msm_camera_enable_vreg(struct device *dev, struct camera_vreg_t *cam_vreg,
 					continue;
 			} else
 				j = i;
-			if (reg_ptr[j]) {
-				regulator_disable(reg_ptr[j]);
-				if (cam_vreg[j].delay > 20)
-					msleep(cam_vreg[j].delay);
-				else if (cam_vreg[j].delay)
-					usleep_range(
-						cam_vreg[j].delay * 1000,
-						(cam_vreg[j].delay * 1000)
-						+ 1000);
-			}
+			regulator_disable(reg_ptr[j]);
+			if (cam_vreg[j].delay > 20)
+				msleep(cam_vreg[j].delay);
+			else if (cam_vreg[j].delay)
+				usleep_range(cam_vreg[j].delay * 1000,
+					(cam_vreg[j].delay * 1000) + 1000);
 		}
 	}
 	return rc;

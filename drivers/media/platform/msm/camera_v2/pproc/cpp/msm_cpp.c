@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2018, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -449,12 +449,10 @@ static unsigned long msm_cpp_queue_buffer_info(struct cpp_device *cpp_dev,
 	buff->map_info.buff_info = *buffer_info;
 	buff->map_info.buf_fd = buffer_info->fd;
 
-#if defined(CONFIG_TRACING) && defined(DEBUG)
 	trace_printk("fd %d index %d native_buff %d ssid %d %d\n",
 		buffer_info->fd, buffer_info->index,
 		buffer_info->native_buff, buff_queue->session_id,
 		buff_queue->stream_id);
-#endif
 
 	if (buff_queue->security_mode == SECURE_MODE)
 		rc = cam_smmu_get_stage2_phy_addr(cpp_dev->iommu_hdl,
@@ -486,12 +484,10 @@ static void msm_cpp_dequeue_buffer_info(struct cpp_device *cpp_dev,
 {
 	int ret = -1;
 
-#if defined(CONFIG_TRACING) && defined(DEBUG)
 	trace_printk("fd %d index %d native_buf %d ssid %d %d\n",
 		buff->map_info.buf_fd, buff->map_info.buff_info.index,
 		buff->map_info.buff_info.native_buff, buff_queue->session_id,
 		buff_queue->stream_id);
-#endif
 
 	if (buff_queue->security_mode == SECURE_MODE)
 		ret = cam_smmu_put_stage2_phy_addr(cpp_dev->iommu_hdl,
@@ -962,14 +958,9 @@ static irqreturn_t msm_cpp_irq(int irq_num, void *data)
 	if (irq_status & 0x8) {
 		tx_level = msm_camera_io_r(cpp_dev->base +
 			MSM_CPP_MICRO_FIFO_TX_STAT) >> 2;
-		if (tx_level < MSM_CPP_TX_FIFO_LEVEL) {
-			for (i = 0; i < tx_level; i++) {
-				tx_fifo[i] = msm_camera_io_r(cpp_dev->base +
-					MSM_CPP_MICRO_FIFO_TX_DATA);
-			}
-		} else {
-			pr_err("Fatal invalid tx level %d", tx_level);
-			goto err;
+		for (i = 0; i < tx_level; i++) {
+			tx_fifo[i] = msm_camera_io_r(cpp_dev->base +
+				MSM_CPP_MICRO_FIFO_TX_DATA);
 		}
 		spin_lock_irqsave(&cpp_dev->tasklet_lock, flags);
 		queue_cmd = &cpp_dev->tasklet_queue_cmd[cpp_dev->taskletq_idx];
@@ -1024,7 +1015,6 @@ static irqreturn_t msm_cpp_irq(int irq_num, void *data)
 		pr_debug("DEBUG_R1: 0x%x\n",
 			msm_camera_io_r(cpp_dev->base + 0x8C));
 	}
-err:
 	msm_camera_io_w(irq_status, cpp_dev->base + MSM_CPP_MICRO_IRQGEN_CLR);
 	return IRQ_HANDLED;
 }
@@ -2682,6 +2672,13 @@ static int msm_cpp_cfg_frame(struct cpp_device *cpp_dev,
 		(new_frame->num_strips >
 			(UINT_MAX - 1 - stripe_base) / stripe_size)) {
 		pr_err("Invalid frame message, num_strips %d is large\n",
+			new_frame->num_strips);
+		return -EINVAL;
+	}
+
+	if (stripe_base == UINT_MAX || new_frame->num_strips >
+		(UINT_MAX - 1 - stripe_base) / stripe_size) {
+		pr_err("Invalid frame message,num_strips %d is large\n",
 			new_frame->num_strips);
 		return -EINVAL;
 	}

@@ -425,8 +425,7 @@ clean_up:
 	return rc;
 }
 
-// JiGaoping add for writing data to eeprom 2016-12-02
-#ifdef CONFIG_VENDOR_SMARTISAN
+//begin: JiGaoping add for writing data to eeprom 2016-12-02
 static int eeprom_parse_write_map(struct msm_eeprom_ctrl_t *e_ctrl,
 	struct msm_eeprom_write_map_array *eeprom_map_array)
 {
@@ -481,7 +480,8 @@ clean_up:
 	kfree(e_ctrl->cal_data.mapdata);
 	return rc;
 }
-#endif
+//end: JiGaoping add for writing data to eeprom 2016-12-02
+
 
 /**
   * msm_eeprom_power_up - Do eeprom power up here
@@ -620,9 +620,6 @@ static int eeprom_init_config(struct msm_eeprom_ctrl_t *e_ctrl,
 	rc = eeprom_parse_memory_map(e_ctrl, memory_map_arr);
 	if (rc < 0) {
 		pr_err("%s::%d memory map parse failed\n", __func__, __LINE__);
-#ifndef CONFIG_VENDOR_SMARTISAN
-		goto free_mem;
-#endif
 	}
 
 	rc = msm_camera_power_down(power_info, e_ctrl->eeprom_device_type,
@@ -630,9 +627,6 @@ static int eeprom_init_config(struct msm_eeprom_ctrl_t *e_ctrl,
 	if (rc < 0) {
 		pr_err("%s:%d Power down failed rc %d\n",
 			__func__, __LINE__, rc);
-#ifndef CONFIG_VENDOR_SMARTISAN
-		goto free_mem;
-#endif
 	}
 
 free_mem:
@@ -1522,11 +1516,9 @@ static int eeprom_init_config32(struct msm_eeprom_ctrl_t *e_ctrl,
 	if (rc < 0) {
 		pr_err("%s:%d memory map parse failed\n",
 			__func__, __LINE__);
-#ifdef CONFIG_VENDOR_SMARTISAN
 		if (msm_camera_power_down(power_info,e_ctrl->eeprom_device_type, &e_ctrl->i2c_client) < 0)
-			pr_err("%s:%d Power down failed\n",
-				__func__, __LINE__);
-#endif
+		  pr_err("%s:%d Power down failed\n",
+		    __func__, __LINE__);
 		goto free_mem;
 	}
 
@@ -1546,8 +1538,7 @@ free_mem:
 	return rc;
 }
 
-// JiGaoping add for write data to eeprom,almost the same as eerpom_init_config32 2016-12-02
-#ifdef CONFIG_VENDOR_SMARTISAN
+//begin: JiGaoping add for write data to eeprom,almost the same as eerpom_init_config32 2016-12-02
 static int eeprom_write_config32(struct msm_eeprom_ctrl_t *e_ctrl,
 	void __user *argp)
 {
@@ -1677,7 +1668,7 @@ free_mem:
 	write_map_array = NULL;
 	return rc;
 }
-#endif
+//end: JiGaoping add for write data to eeprom,almost the same as eerpom_init_config32 2016-12-02
 
 static int msm_eeprom_config32(struct msm_eeprom_ctrl_t *e_ctrl,
 	void __user *argp)
@@ -1734,9 +1725,8 @@ static int msm_eeprom_config32(struct msm_eeprom_ctrl_t *e_ctrl,
 				__func__, __LINE__);
 		}
 		break;
-#ifdef CONFIG_VENDOR_SMARTISAN
 	case CFG_EEPROM_WRITE_DATA:
-		rc = eeprom_write_config32(e_ctrl, argp);
+		rc = eeprom_write_config32(e_ctrl,argp);
 		if (rc >= 0) {
 			e_ctrl->cal_data.num_data = 0;// clear flag of reading
 			pr_err("[EEPDEBUG] write succeed\n");
@@ -1744,7 +1734,6 @@ static int msm_eeprom_config32(struct msm_eeprom_ctrl_t *e_ctrl,
 			pr_err("[EEPDEBUG] write failed\n");
 		}
 		break;
-#endif
 	default:
 		break;
 	}

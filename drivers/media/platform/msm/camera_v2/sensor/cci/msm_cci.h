@@ -123,10 +123,9 @@ struct msm_camera_cci_master_info {
 	struct mutex mutex;
 	struct completion reset_complete;
 	struct mutex mutex_q[NUM_QUEUES];
-#ifdef CONFIG_VENDOR_SMARTISAN
-	// xiaopeng cci operation all protected 2016-01-03
+	/* Begin xiaopeng cci operation all protected 2016-01-03 */
 	struct mutex mutex_o;
-#endif
+	/* End xiaopeng cci operation all protected 2016-01-03 */
 	struct completion report_q[NUM_QUEUES];
 	atomic_t done_pending[NUM_QUEUES];
 	spinlock_t lock_q[NUM_QUEUES];

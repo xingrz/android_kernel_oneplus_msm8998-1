@@ -331,9 +331,6 @@ static int32_t msm_cci_addr_to_num_bytes(
 	case MSM_CAMERA_I2C_3B_ADDR:
 		retVal = 3;
 		break;
-	case MSM_CAMERA_I2C_DWORD_ADDR:
-		retVal = 4;
-		break;
 	default:
 		pr_err("%s: %d failed: %d\n", __func__, __LINE__, addr_type);
 		retVal = 1;
@@ -406,10 +403,6 @@ static int32_t msm_cci_calc_cmd_len(struct cci_device *cci_dev,
 			if (cmd->reg_addr + 1 ==
 				(cmd+1)->reg_addr) {
 				len += data_len;
-				if (len > cci_dev->payload_size) {
-					len = len - data_len;
-					break;
-				}
 				*pack += data_len;
 			} else
 				break;
@@ -1636,17 +1629,17 @@ static int32_t msm_cci_write(struct v4l2_subdev *sd,
 		break;
 	case MSM_CCI_I2C_WRITE:
 	case MSM_CCI_I2C_WRITE_SEQ:
-#ifdef CONFIG_VENDOR_SMARTISAN
+		/* Begin xiaopeng cci operation all protected 2016-01-03 */
 		mutex_lock(&cci_master_info->mutex_o);
-#endif
+		/* End xiaopeng cci operation all protected 2016-01-03 */
 		for (i = 0; i < NUM_QUEUES; i++) {
 			if (mutex_trylock(&cci_master_info->mutex_q[i])) {
 				rc = msm_cci_i2c_write(sd, c_ctrl, i,
 					MSM_SYNC_DISABLE);
 				mutex_unlock(&cci_master_info->mutex_q[i]);
-#ifdef CONFIG_VENDOR_SMARTISAN
+				/* Begin xiaopeng cci operation all protected 2016-01-03 */
 				mutex_unlock(&cci_master_info->mutex_o);
-#endif
+				/* End xiaopeng cci operation all protected 2016-01-03 */
 				return rc;
 			}
 		}
@@ -1654,9 +1647,9 @@ static int32_t msm_cci_write(struct v4l2_subdev *sd,
 		rc = msm_cci_i2c_write(sd, c_ctrl,
 			PRIORITY_QUEUE, MSM_SYNC_DISABLE);
 		mutex_unlock(&cci_master_info->mutex_q[PRIORITY_QUEUE]);
-#ifdef CONFIG_VENDOR_SMARTISAN
+		/* Begin xiaopeng cci operation all protected 2016-01-03 */
 		mutex_unlock(&cci_master_info->mutex_o);
-#endif
+		/* End xiaopeng cci operation all protected 2016-01-03 */
 		break;
 	case MSM_CCI_I2C_WRITE_ASYNC:
 		rc = msm_cci_i2c_write_async(sd, c_ctrl,
@@ -1668,23 +1661,18 @@ static int32_t msm_cci_write(struct v4l2_subdev *sd,
 	return rc;
 }
 
-#ifdef CONFIG_VENDOR_SMARTISAN
 static int32_t msm_cci_config(struct v4l2_subdev *sd,
-	struct msm_camera_cci_ctrl *cci_ctrl, uint8_t cci_msm_close)
-#else
-static int32_t msm_cci_config(struct v4l2_subdev *sd,
-	struct msm_camera_cci_ctrl *cci_ctrl)
-#endif
+	struct msm_camera_cci_ctrl *cci_ctrl,uint8_t cci_msm_close)
 {
 	int32_t rc = 0;
-#ifdef CONFIG_VENDOR_SMARTISAN
+	/* Begin xiaopeng CCI read mutex protect 2016-01-03 */
 	struct cci_device *cci_dev;
 	enum cci_i2c_master_t master;
 	struct msm_camera_cci_master_info *cci_master_info;
-#endif
+	/* End xiaopeng CCI read mutex protect 2016-01-03 */
 	CDBG("%s line %d cmd %d\n", __func__, __LINE__,
 		cci_ctrl->cmd);
-#ifdef CONFIG_VENDOR_SMARTISAN
+	/* Begin xiaopeng CCI read mutex protect 2016-01-03 */
 	cci_dev = v4l2_get_subdevdata(sd);
 	if (!cci_dev || !cci_ctrl) {
 		pr_err("%s:%d failed: invalid params %p %p\n", __func__,
@@ -1692,32 +1680,33 @@ static int32_t msm_cci_config(struct v4l2_subdev *sd,
 		rc = -EINVAL;
 		return rc;
 	}
-	if (!cci_msm_close) {
-		master = cci_ctrl->cci_info->cci_i2c_master;
-		cci_master_info = &cci_dev->cci_master_info[master];
-	}
-#endif
+        if(!cci_msm_close) {
+	    master = cci_ctrl->cci_info->cci_i2c_master;
+	    cci_master_info = &cci_dev->cci_master_info[master];
+        }
+	/* End xiaopeng CCI read mutex protect 2016-01-03 */
 	switch (cci_ctrl->cmd) {
 	case MSM_CCI_INIT:
-#ifdef CONFIG_VENDOR_SMARTISAN
+		/* Begin xiaopeng cci operation all protected 2016-01-03 */
 		mutex_lock(&cci_master_info->mutex_o);
-#endif
+		/* End xiaopeng cci operation all protected 2016-01-03 */
 		rc = msm_cci_init(sd, cci_ctrl);
-#ifdef CONFIG_VENDOR_SMARTISAN
+		/* Begin xiaopeng cci operation all protected 2016-01-03 */
 		mutex_unlock(&cci_master_info->mutex_o);
-#endif
+		/* End xiaopeng cci operation all protected 2016-01-03 */
 		break;
 	case MSM_CCI_RELEASE:
-		rc = msm_cci_release(sd);
+		    pr_err("%s:%d tpa MSM_CCI_RELEASE,cci_msm_close:%d",__func__,__LINE__,cci_msm_close);
+                    rc = msm_cci_release(sd);
 		break;
 	case MSM_CCI_I2C_READ:
-#ifdef CONFIG_VENDOR_SMARTISAN
+		/* Begin xiaopeng cci operation all protected 2016-01-03 */
 		mutex_lock(&cci_master_info->mutex_o);
-#endif
+		/* End xiaopeng cci operation all protected 2016-01-03 */
 		rc = msm_cci_i2c_read_bytes(sd, cci_ctrl);
-#ifdef CONFIG_VENDOR_SMARTISAN
+		/* Begin xiaopeng cci operation all protected 2016-01-03 */
 		mutex_unlock(&cci_master_info->mutex_o);
-#endif
+		/* End xiaopeng cci operation all protected 2016-01-03 */
 		break;
 	case MSM_CCI_I2C_WRITE:
 	case MSM_CCI_I2C_WRITE_SEQ:
@@ -1871,25 +1860,17 @@ static long msm_cci_subdev_ioctl(struct v4l2_subdev *sd,
 	CDBG("%s line %d\n", __func__, __LINE__);
 	switch (cmd) {
 	case VIDIOC_MSM_CCI_CFG:
-#ifdef CONFIG_VENDOR_SMARTISAN
 		rc = msm_cci_config(sd, arg, 0);
-#else
-		rc = msm_cci_config(sd, arg);
-#endif
 		break;
 	case MSM_SD_NOTIFY_FREEZE:
 		break;
 	case MSM_SD_UNNOTIFY_FREEZE:
 		break;
 	case MSM_SD_SHUTDOWN: {
-		struct msm_camera_cci_ctrl ctrl_cmd;
+                struct msm_camera_cci_ctrl ctrl_cmd;
 		ctrl_cmd.cmd = MSM_CCI_RELEASE;
-#ifdef CONFIG_VENDOR_SMARTISAN
-		//when msm_close ,has no cci_i2c_master
-		rc = msm_cci_config(sd, &ctrl_cmd, 1);
-#else
-		rc = msm_cci_config(sd, &ctrl_cmd);
-#endif
+		pr_err("%s:%d ,tpa msm_close,ready to release",__func__,__LINE__);
+		rc = msm_cci_config(sd, &ctrl_cmd, 1);//when msm_close ,has no cci_i2c_master
 		break;
 	}
 	default:
@@ -1926,9 +1907,9 @@ static void msm_cci_init_cci_params(struct cci_device *new_cci_dev)
 			spin_lock_init(&new_cci_dev->
 				cci_master_info[i].lock_q[j]);
 		}
-#ifdef CONFIG_VENDOR_SMARTISAN
+		/* Begin xiaopeng cci operation all protected 2016-01-03 */
 		mutex_init(&new_cci_dev->cci_master_info[i].mutex_o);
-#endif
+		/* End xiaopeng cci operation all protected 2016-01-03 */
 	}
 	return;
 }

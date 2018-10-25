@@ -20,9 +20,25 @@
 
 #undef CDBG
 #define CDBG(fmt, args...) pr_debug(fmt, ##args)
+//#define MODULE_ID_MATCH
+
 
 static struct msm_camera_i2c_fn_t msm_sensor_cci_func_tbl;
 static struct msm_camera_i2c_fn_t msm_sensor_secure_func_tbl;
+
+#ifdef MODULE_ID_MATCH
+/* Begin xiaopeng add module id 2016-12-27 */
+#define SENSOR_EEPROM_BASIC_INFO_FLAG 0x00
+#define SENSOR_EEPROM_MODULE_ID_OFFSET 0x0e
+#define SENSOR_EEPROM_BASIC_INFO_FLAG_VALID 0x01
+#define SENSOR_EEPROM_FRONT_SID 0x50
+#define SENSOR_EEPROM_MAIN_SID 0x50
+
+#define SENSOR_EEPROM_AUX_BASIC_INFO_FLAG 0x600
+#define SENSOR_EEPROM_AUX_MODULE_ID_OFFSET 0x60e
+#define SENSOR_EEPROM_AUX_SID 0x54
+/* End xiaopeng add module id 2016-12-27 */
+#endif
 
 static void msm_sensor_adjust_mclk(struct msm_camera_power_ctrl_t *ctrl)
 {
@@ -235,6 +251,78 @@ static uint16_t msm_sensor_id_by_mask(struct msm_sensor_ctrl_t *s_ctrl,
 	}
 	return sensor_id;
 }
+#ifdef MODULE_ID_MATCH
+int msm_sensor_get_module_id(struct msm_sensor_ctrl_t *s_ctrl,uint8_t camera_id,uint8_t *module_id_otp)
+{
+	int rc = 0;
+	struct msm_camera_i2c_client *sensor_i2c_client;
+	uint8_t basic_info_flag = 0;
+	const char *sensor_name;
+	uint16_t sid_bp;
+	sensor_i2c_client = s_ctrl->sensor_i2c_client;
+	sensor_name = s_ctrl->sensordata->sensor_name;
+
+		sid_bp = sensor_i2c_client->cci_client->sid;
+    CDBG("%s: 1 cci_client->sid = 0x%x camera_id %d\n", __func__, sensor_i2c_client->cci_client->sid,camera_id);
+    if(CAMERA_1 == camera_id)
+    {
+        sensor_i2c_client->cci_client->sid = SENSOR_EEPROM_AUX_SID;
+		rc = sensor_i2c_client->i2c_func_tbl->i2c_read_seq(
+			sensor_i2c_client, SENSOR_EEPROM_AUX_BASIC_INFO_FLAG,
+			&basic_info_flag, MSM_CAMERA_I2C_BYTE_DATA);
+		if (rc < 0) {
+			pr_err("%s: %s: read module id failed\n", __func__, sensor_name);
+			return -EINVAL;
+		}
+		if (basic_info_flag != SENSOR_EEPROM_BASIC_INFO_FLAG_VALID) {
+			pr_err("Err:%s basic_info_flag is %d\n",
+				__func__, basic_info_flag);
+			return -EINVAL;
+		}
+		rc = sensor_i2c_client->i2c_func_tbl->i2c_read_seq(
+			sensor_i2c_client, SENSOR_EEPROM_AUX_MODULE_ID_OFFSET,
+			module_id_otp, MSM_CAMERA_I2C_BYTE_DATA);
+		if (rc < 0) {
+			pr_err("%s: %s: read module id failed\n", __func__, sensor_name);
+			return -EINVAL;
+		}
+    }
+    else
+    {
+    	if(CAMERA_0 == camera_id) //main cam
+        {
+    		sensor_i2c_client->cci_client->sid = SENSOR_EEPROM_MAIN_SID;
+    	}
+    	else if (CAMERA_2 == camera_id)  //front cam
+    	{
+    		sensor_i2c_client->cci_client->sid = SENSOR_EEPROM_FRONT_SID;
+    	}
+		rc = sensor_i2c_client->i2c_func_tbl->i2c_read_seq(
+			sensor_i2c_client, SENSOR_EEPROM_BASIC_INFO_FLAG,
+			&basic_info_flag, MSM_CAMERA_I2C_BYTE_DATA);
+		if (rc < 0) {
+			pr_err("%s: %s: read module id failed\n", __func__, sensor_name);
+			return -EINVAL;
+		}
+		if (basic_info_flag != SENSOR_EEPROM_BASIC_INFO_FLAG_VALID) {
+			pr_err("Err:%s basic_info_flag is %d\n",
+				__func__, basic_info_flag);
+			return -EINVAL;
+		}
+		rc = sensor_i2c_client->i2c_func_tbl->i2c_read_seq(
+			sensor_i2c_client, SENSOR_EEPROM_MODULE_ID_OFFSET,
+			module_id_otp, MSM_CAMERA_I2C_BYTE_DATA);
+		if (rc < 0) {
+			pr_err("%s: %s: read module id failed\n", __func__, sensor_name);
+			return -EINVAL;
+		}
+	}
+		sensor_i2c_client->cci_client->sid = sid_bp;
+    CDBG("%s: 3 cci_client->sid = 0x%x camera_id %d module_id_otp=%d\n", __func__, sensor_i2c_client->cci_client->sid,camera_id,*module_id_otp);
+
+    return rc;
+}
+#endif
 
 int msm_sensor_match_id(struct msm_sensor_ctrl_t *s_ctrl)
 {
@@ -243,6 +331,14 @@ int msm_sensor_match_id(struct msm_sensor_ctrl_t *s_ctrl)
 	struct msm_camera_i2c_client *sensor_i2c_client;
 	struct msm_camera_slave_info *slave_info;
 	const char *sensor_name;
+#ifdef MODULE_ID_MATCH
+    /* Begin xiaopeng add module id 2016-12-27 */
+	uint8_t camera_id = 0;
+	uint8_t module_id = 0;
+	uint8_t module_id_otp = 0;
+	int mirc = 0;
+	/* End xiaopeng add module id 2016-12-27 */
+#endif
 
 	if (!s_ctrl) {
 		pr_err("%s:%d failed: %pK\n",
@@ -253,6 +349,12 @@ int msm_sensor_match_id(struct msm_sensor_ctrl_t *s_ctrl)
 	slave_info = s_ctrl->sensordata->slave_info;
 	sensor_name = s_ctrl->sensordata->sensor_name;
 
+#ifdef MODULE_ID_MATCH
+	/* Begin xiaopeng add module id 2016-12-27 */
+	camera_id = s_ctrl->sensordata->slave_info->camera_id;
+	module_id = s_ctrl->sensordata->slave_info->module_id;
+	/* End xiaopeng add module id 2016-12-27 */
+#endif
 	if (!sensor_i2c_client || !slave_info || !sensor_name) {
 		pr_err("%s:%d failed: %pK %pK %pK\n",
 			__func__, __LINE__, sensor_i2c_client, slave_info,
@@ -268,13 +370,35 @@ int msm_sensor_match_id(struct msm_sensor_ctrl_t *s_ctrl)
 		return rc;
 	}
 
-	pr_debug("%s: read id: 0x%x expected id 0x%x:\n",
+	pr_err("%s: read chip id: 0x%x expected id 0x%x:\n",
 			__func__, chipid, slave_info->sensor_id);
 	if (msm_sensor_id_by_mask(s_ctrl, chipid) != slave_info->sensor_id) {
 		pr_err("%s chip id %x does not match %x\n",
 				__func__, chipid, slave_info->sensor_id);
 		return -ENODEV;
 	}
+
+#ifdef MODULE_ID_MATCH
+	/* Begin xiaopeng add module id 2016-12-27 */
+        int mirc = msm_sensor_get_module_id(s_ctrl,camera_id,&module_id_otp);
+        if (mirc < 0) {
+		    pr_err("%s: %s: WARNING read module id failed\n", __func__, sensor_name);
+		    module_id_otp = 0x6; //set qtech is by default
+		    pr_err("%s: %s: WARNING set qtech(0x6) is by default\n", __func__, sensor_name);
+        } else
+		    rc = mirc;
+
+	pr_err("%s: %s: read module id: 0x%x expected id 0x%x:\n",
+			__func__, sensor_name, module_id_otp, module_id);
+
+	if (module_id_otp != module_id)
+	{
+		pr_err("Err:%s module id 0x%x does not match 0x%x\n",
+			__func__, module_id_otp, module_id);
+		return -EINVAL;
+	}
+	/* End xiaopeng add module id 2016-12-27 */
+#endif
 	return rc;
 }
 
@@ -584,7 +708,7 @@ static int msm_sensor_config32(struct msm_sensor_ctrl_t *s_ctrl,
 			pr_err("%s:%d: i2c_read failed\n", __func__, __LINE__);
 			break;
 		}
-		if (copy_to_user(&read_config_ptr->data,
+		if (copy_to_user((void __user *)(&read_config_ptr->data),
 				&local_data, sizeof(local_data))) {
 			pr_err("%s:%d failed\n", __func__, __LINE__);
 			rc = -EFAULT;
@@ -1103,7 +1227,7 @@ int msm_sensor_config(struct msm_sensor_ctrl_t *s_ctrl, void __user *argp)
 			pr_err("%s:%d: i2c_read failed\n", __func__, __LINE__);
 			break;
 		}
-		if (copy_to_user(&read_config_ptr->data,
+		if (copy_to_user((void __user *)(&read_config_ptr->data),
 				&local_data, sizeof(local_data))) {
 			pr_err("%s:%d failed\n", __func__, __LINE__);
 			rc = -EFAULT;
