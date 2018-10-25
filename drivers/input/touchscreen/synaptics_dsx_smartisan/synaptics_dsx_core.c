@@ -1062,6 +1062,37 @@ static void synaptics_rmi4_wakeup_gesture(struct synaptics_rmi4_data *rmi4_data,
 	return;
 }
 
+#define SCREEN_WIDTH 1080
+#define SCREEN_SLOP 20
+#define SCREEN_LEFT_EDGE (SCREEN_SLOP)
+#define SCREEN_RIGHT_EDGE (SCREEN_WIDTH - SCREEN_SLOP)
+
+static int synaptics_rmi4_remap_check(int x)
+{
+	if (x < SCREEN_SLOP / 2) {
+		return 1;
+	}
+
+	if (x > SCREEN_WIDTH - SCREEN_SLOP / 2) {
+		return 1;
+	}
+
+	return 0;
+}
+
+static int synaptics_rmi4_remap_position_x(int x)
+{
+	if (x < SCREEN_LEFT_EDGE) {
+		return x * 2 - SCREEN_LEFT_EDGE;
+	}
+
+	if (x > SCREEN_RIGHT_EDGE) {
+		return SCREEN_RIGHT_EDGE + (x - SCREEN_RIGHT_EDGE) * 2;
+	}
+
+	return x;
+}
+
 static int synaptics_rmi4_f11_abs_report(struct synaptics_rmi4_data *rmi4_data,
 		struct synaptics_rmi4_fn *fhandler)
 {
@@ -1181,10 +1212,19 @@ static int synaptics_rmi4_f11_abs_report(struct synaptics_rmi4_data *rmi4_data,
 			if (rmi4_data->hw_if->board_data->y_flip)
 				y = rmi4_data->sensor_max_y - y;
 
+			if (synaptics_rmi4_remap_check(x)) {
+#ifdef TYPE_B_PROTOCOL
+				input_mt_slot(rmi4_data->input_dev, finger);
+				input_mt_report_slot_state(rmi4_data->input_dev,
+						MT_TOOL_FINGER, 0);
+#endif
+				continue;
+			}
+
 			input_report_key(rmi4_data->input_dev,
 					BTN_TOUCH, 1);
 			input_report_abs(rmi4_data->input_dev,
-					ABS_MT_POSITION_X, x);
+					ABS_MT_POSITION_X, synaptics_rmi4_remap_position_x(x));
 			input_report_abs(rmi4_data->input_dev,
 					ABS_MT_POSITION_Y, y);
 #ifdef REPORT_2D_W
@@ -1384,6 +1424,15 @@ static int synaptics_rmi4_f12_abs_report(struct synaptics_rmi4_data *rmi4_data,
 		if (rmi4_data->hw_if->board_data->y_flip)
 			y = rmi4_data->sensor_max_y - y;
 
+		if (synaptics_rmi4_remap_check(x)) {
+#ifdef TYPE_B_PROTOCOL
+			input_mt_slot(rmi4_data->input_dev, finger);
+			input_mt_report_slot_state(rmi4_data->input_dev,
+					MT_TOOL_FINGER, 0);
+#endif
+			continue;
+		}
+
 		switch (finger_status) {
 		case F12_FINGER_STATUS:
 		case F12_GLOVED_FINGER_STATUS:
@@ -1399,7 +1448,7 @@ static int synaptics_rmi4_f12_abs_report(struct synaptics_rmi4_data *rmi4_data,
 			input_report_key(rmi4_data->input_dev,
 					BTN_TOUCH, 1);
 			input_report_abs(rmi4_data->input_dev,
-					ABS_MT_POSITION_X, x);
+					ABS_MT_POSITION_X, synaptics_rmi4_remap_position_x(x));
 			input_report_abs(rmi4_data->input_dev,
 					ABS_MT_POSITION_Y, y);
 #ifdef REPORT_2D_W
