@@ -192,7 +192,11 @@
 			reg = <0x0a800000 0xc8d0>;
 			interrupt-parent = <&intc>;
 			interrupts = <0 131 0>;
+#ifdef CONFIG_VENDOR_SMARTISAN
+			usb-phy = <&qusb_phy0>, <&usb_nop_phy>;
+#else
 			usb-phy = <&qusb_phy0>, <&ssphy>;
+#endif
 			tx-fifo-resize;
 			snps,usb3-u1u2-disable;
 			snps,nominal-elastic-buffer;
@@ -200,6 +204,9 @@
 			snps,has-lpm-erratum;
 			snps,is-utmi-l1-suspend;
 			snps,hird-threshold = /bits/ 8 <0x0>;
+#ifdef CONFIG_VENDOR_SMARTISAN
+			maximum-speed = "high-speed";
+#endif
 		};
 
 		qcom,usbbam@a904000 {
@@ -269,18 +276,36 @@
 		compatible = "qcom,qusb2phy";
 		reg = <0x0c012000 0x180>,
 			<0x01fcb24c 0x4>,
+#ifndef CONFIG_VENDOR_SMARTISAN
 			<0x00780240 0x4>,
+#endif
 			<0x00188018 0x4>;
 		reg-names = "qusb_phy_base",
 			"tcsr_clamp_dig_n_1p8",
+#ifndef CONFIG_VENDOR_SMARTISAN
 			"tune2_efuse_addr",
+#endif
 			"ref_clk_addr";
 		vdd-supply = <&pm660l_l1>;
 		vdda18-supply = <&pm660_l10>;
 		vdda33-supply = <&pm660l_l7>;
 		qcom,vdd-voltage-level = <0 925000 925000>;
+#ifndef CONFIG_VENDOR_SMARTISAN
 		qcom,tune2-efuse-bit-pos = <25>;
 		qcom,tune2-efuse-num-bits = <4>;
+#endif
+#ifdef CONFIG_VENDOR_SMARTISAN
+		qcom,qusb-phy-init-seq = <0xf8 0x80
+					0x33 0x84
+					0x83 0x88
+					0xcf 0x8c
+					0x30 0x08
+					0x79 0x0c
+					0x21 0x10
+					0x14 0x9c
+					0x9f 0x1c
+					0x00 0x18>;
+#else
 		qcom,qusb-phy-init-seq = <0xf8 0x80
 					0xb3 0x84
 					0x83 0x88
@@ -291,6 +316,7 @@
 					0x14 0x9c
 					0x9f 0x1c
 					0x00 0x18>;
+#endif
 		phy_type= "utmi";
 		qcom,phy-clk-scheme = "cml";
 		qcom,major-rev = <1>;
@@ -305,7 +331,16 @@
 		reset-names = "phy_reset";
 	};
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+	usb_nop_phy: usb_nop_phy {
+		compatible = "usb-nop-xceiv";
+	};
+#endif
+
 	ssphy: ssphy@c010000 {
+#ifdef CONFIG_VENDOR_SMARTISAN
+		status = "disabled";
+#endif
 		compatible = "qcom,usb-ssphy-qmp-v2";
 		reg = <0xc010000 0xe18>,
 			<0x01fcb244 0x4>,

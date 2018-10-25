@@ -11,8 +11,17 @@
  */
 
 #include "sdm660-pinctrl.dtsi"
+#ifdef CONFIG_VENDOR_SMARTISAN
+#include "oscar-camera.dtsi"
+#else
 #include "sdm660-camera-sensor-qrd.dtsi"
+#endif
 #include "sdm660-external-codec.dtsi"
+
+#ifdef CONFIG_VENDOR_SMARTISAN
+#include "oscar-charging.dtsi"
+#include "osborn-unused-gpio.dtsi"
+#endif
 / {
 };
 
@@ -52,14 +61,19 @@
 	status = "ok";
 };
 
+#ifndef CONFIG_VENDOR_SMARTISAN
 &sdc2_cd_on {
 	config {
 		/delete-property/ bias-pull-up;
 		bias-disable;
 	};
 };
+#endif
 
 &sdhc_2 {
+#ifdef CONFIG_VENDOR_SMARTISAN
+	status = "disabled";
+#else
 	/* device core power supply */
 	vdd-supply = <&pm660l_l5>;
 	qcom,vdd-voltage-level = <2950000 2950000>;
@@ -90,6 +104,7 @@
 	qcom,bus-speed-mode = "SDR12", "SDR25", "SDR50", "DDR50", "SDR104";
 
 	status = "ok";
+#endif
 };
 
 &ufsphy1 {
@@ -106,12 +121,23 @@
 &ufs1 {
 	vdd-hba-supply = <&gdsc_ufs>;
 	vdd-hba-fixed-regulator;
+#ifdef CONFIG_VENDOR_SMARTISAN
+	vcc-supply = <&pm660l_l5>;
+	vccq2_gpios = <&tlmm 34 0x1>;
+#else
 	vcc-supply = <&pm660l_l4>;
 	vccq2-supply = <&pm660_l8>;
+#endif
 	vcc-max-microamp = <500000>;
 	vccq2-max-microamp = <600000>;
 	status = "ok";
 };
+
+#ifdef CONFIG_VENDOR_SMARTISAN
+&ufs_ice {
+	status = "ok";
+};
+#endif
 
 &soc {
 	qcom,msm-ssc-sensors {
@@ -120,6 +146,18 @@
 };
 
 &qusb_phy0 {
+#ifdef CONFIG_VENDOR_SMARTISAN
+	qcom,qusb-phy-init-seq = <0xf8 0x80
+				0x33 0x84
+				0x83 0x88
+				0xcf 0x8c
+				0x30 0x08
+				0x79 0x0c
+				0x21 0x10
+				0x14 0x9c
+				0x9f 0x1c
+				0x00 0x18>;
+#else
 	qcom,qusb-phy-init-seq = <0xf8 0x80
 				0x83 0x84
 				0x83 0x88
@@ -130,6 +168,7 @@
 				0x14 0x9c
 				0x9f 0x1c
 				0x00 0x18>;
+#endif
 };
 
 &pm660_gpios {
@@ -171,12 +210,17 @@
 		status = "ok";
 		qcom,mode = <0>;
 		qcom,pull = <0>;
+#ifdef CONFIG_VENDOR_SMARTISAN
+		qcom,vin-sel = <1>;
+#else
 		qcom,vin-sel = <0>;
+#endif
 		qcom,src-sel = <0>;
 		qcom,out-strength = <1>;
 	};
 };
 
+#ifndef CONFIG_VENDOR_SMARTISAN
 &tlmm {
 	pmx_ts_rst_active {
 		ts_rst_active: ts_rst_active {
@@ -208,6 +252,7 @@
 		};
 	};
 };
+#endif
 
 &ssphy {
 	fpc-redrive-supply = <&pm660_l11>;
@@ -216,11 +261,35 @@
 };
 
 &soc {
+#ifdef CONFIG_VENDOR_SMARTISAN
+	i2c@c178000 { /* BLSP1 QUP3 */
+		status = "okay";
+
+		synaptics_dsx@4b {
+			compatible = "synaptics,dsx-i2c";
+			reg = <0x4b>;
+			interrupt-parent = <&tlmm>;
+			interrupts = <67 0x2008>;
+			synaptics,irq-gpio = <&tlmm 67 0x2008>; /* IRQF_ONESHOT | IRQF_TRIGGER_LOW */
+			synaptics,irq-on-state = <0>;
+			synaptics,y-flip;
+			synaptics,x-flip;
+		};
+
+		nxu8010@44 {
+			compatible = "nxu8010";
+			reg = <0x44>;
+			vdd-supply = <&pm660l_l3>;
+		};
+	};
+#endif
+
 	gpio_keys {
 		compatible = "gpio-keys";
 		input-name = "gpio-keys";
 		status = "ok";
 
+#ifndef CONFIG_VENDOR_SMARTISAN
 		vol_up {
 			label = "volume_up";
 			gpios = <&pm660l_gpios 7 0x1>;
@@ -229,6 +298,7 @@
 			gpio-key,wakeup;
 			debounce-interval = <15>;
 		};
+#endif
 	};
 };
 
@@ -236,13 +306,23 @@
 	qrd_batterydata: qcom,battery-data {
 		qcom,batt-id-range-pct = <15>;
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+		#include "fg-gen3-batterydata-oscar-atl-3500mah.dtsi"
+		#include "fg-gen3-batterydata-oscar-scud-3500mah.dtsi"
+#else
 		#include "fg-gen3-batterydata-qrd-skuk-4v4-3000mah.dtsi"
+#endif
 	};
 };
 
 &pm660_fg {
 	qcom,battery-data = <&qrd_batterydata>;
+#ifdef CONFIG_VENDOR_SMARTISAN
+	qcom,fg-jeita-thresholds = <0 15 45 60>;
+	qcom,fg-force-load-profile;
+#else
 	qcom,fg-jeita-thresholds = <0 5 55 55>;
+#endif
 	qcom,battery-thermal-coefficients = [9d 50 ff];
 };
 

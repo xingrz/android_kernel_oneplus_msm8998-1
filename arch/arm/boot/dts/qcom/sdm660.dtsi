@@ -875,7 +875,11 @@
 			qcom,high-threshold-uamp = <4200000>;
 			qcom,vph-high-threshold-uv = <3500000>;
 			qcom,vph-low-threshold-uv = <3300000>;
+#ifdef CONFIG_VENDOR_SMARTISAN
+			qcom,soc-low-threshold = <0>;
+#else
 			qcom,soc-low-threshold = <10>;
+#endif
 		};
 	};
 
@@ -2225,6 +2229,10 @@
 			<&clock_rpmcc QSEECOM_CE1_CLK>;
 		qcom,ce-opp-freq = <171430000>;
 		qcom,qsee-reentrancy-support = <2>;
+#ifdef CONFIG_VENDOR_SMARTISAN
+		qcom,appsbl-qseecom-support;
+		qcom,commonlib64-loaded-by-uefi;
+#endif
 	};
 
 	qcom_cedev: qcedev@1de0000{
@@ -2341,6 +2349,31 @@
 		status = "disabled";
 	};
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+	ufs_ice: ufsice@1db0000 {
+		compatible = "qcom,ice";
+		reg = <0x1db0000 0x8000>;
+		qcom,enable-ice-clk;
+		clock-names = "ufs_core_clk", "bus_clk",
+				"iface_clk", "ice_core_clk";
+		clocks = <&clock_gcc GCC_UFS_AXI_CLK>,
+			 <&clock_gcc GCC_UFS_CLKREF_CLK>,
+			 <&clock_gcc GCC_UFS_AHB_CLK>,
+			 <&clock_gcc GCC_UFS_ICE_CORE_CLK>;
+		qcom,op-freq-hz = <0>, <0>, <0>, <300000000>;
+		vdd-hba-supply = <&gdsc_ufs>;
+		qcom,msm-bus,name = "ufs_ice_noc";
+		qcom,msm-bus,num-cases = <2>;
+		qcom,msm-bus,num-paths = <1>;
+		qcom,msm-bus,vectors-KBps =
+				<1 650 0 0>,    /* No vote */
+				<1 650 1000 0>; /* Max. bandwidth */
+		qcom,bus-vector-names = "MIN",
+					"MAX";
+		qcom,instance-type = "ufs";
+	};
+#endif
+
 	ufs1: ufshc@1da4000 {
 		compatible = "qcom,ufshc";
 		reg = <0x1da4000 0x3000>;
@@ -2378,7 +2411,11 @@
 			<0 0>;
 
 		lanes-per-direction = <1>;
+#ifdef CONFIG_VENDOR_SMARTISAN
+		spm-level = <3>;
+#else
 		spm-level = <5>;
+#endif
 
 		non-removable;
 		qcom,msm-bus,name = "ufs1";
@@ -2402,6 +2439,17 @@
 		"HS_RA_G1_L1", "HS_RA_G2_L1", "HS_RA_G3_L1",
 		"HS_RB_G1_L1", "HS_RB_G2_L1", "HS_RB_G3_L1",
 		"MAX";
+
+#ifdef CONFIG_VENDOR_SMARTISAN
+		/* PM QoS */
+		qcom,pm-qos-cpu-groups = <0x0F 0xF0>;
+		qcom,pm-qos-cpu-group-latency-us = <70 70>;
+		qcom,pm-qos-default-cpu = <0>;
+
+		pinctrl-names = "dev-reset-assert", "dev-reset-deassert";
+		pinctrl-0 = <&ufs_dev_reset_assert>;
+		pinctrl-1 = <&ufs_dev_reset_deassert>;
+#endif
 
 		resets = <&clock_gcc GCC_UFS_BCR>;
 		reset-names = "core_reset";
@@ -2621,6 +2669,17 @@
 #include "sdm660-audio.dtsi"
 
 &pm660l_gpios {
+#ifdef CONFIG_VENDOR_SMARTISAN
+	gpio@c500 {
+		status = "okay";
+		qcom,mode = <0>;
+		qcom,pull = <0>;
+		qcom,vin-sel = <0>;
+		qcom,src-sel = <0>;
+		qcom,out-strength = <1>;
+	};
+#endif
+
 	/* GPIO 7 for VOL_UP */
 	gpio@c600 {
 		status = "okay";
@@ -2646,6 +2705,7 @@
 		pinctrl-0 = <&gpio_key_active>;
 		pinctrl-1 = <&gpio_key_suspend>;
 
+#ifndef CONFIG_VENDOR_SMARTISAN
 		camera_focus {
 			label = "camera_focus";
 			gpios = <&tlmm 64 0x1>;
@@ -2670,6 +2730,7 @@
 			gpio-key,wakeup;
 			debounce-interval = <15>;
 		};
+#endif
 	};
 };
 
@@ -2679,3 +2740,7 @@
 
 #include "sdm660-mdss.dtsi"
 #include "sdm660-mdss-pll.dtsi"
+
+#ifdef CONFIG_VENDOR_SMARTISAN
+#include "oscar-fingerprint.dtsi"
+#endif

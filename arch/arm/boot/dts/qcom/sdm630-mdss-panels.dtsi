@@ -17,6 +17,12 @@
 #include "dsi-panel-truly-1080p-video.dtsi"
 #include "dsi-panel-rm67195-amoled-fhd-cmd.dtsi"
 #include "dsi-panel-sharp-split-link-wuxga-video.dtsi"
+#ifdef CONFIG_VENDOR_SMARTISAN
+#include "dsi-panel-ft8716-1080p-video.dtsi"
+#include "dsi-panel-td4310-1080p-video.dtsi"
+#include "dsi-panel-txd-td4310-1080p-video.dtsi"
+#include "dsi-panel-boe-td4310-1080p-video.dtsi"
+#endif
 
 &soc {
 	dsi_panel_pwr_supply: dsi_panel_pwr_supply {
@@ -243,3 +249,58 @@
 	qcom,mdss-dsi-pan-enable-dynamic-fps;
 	qcom,mdss-dsi-pan-fps-update = "dfps_immediate_porch_mode_vfp";
 };
+
+#ifdef CONFIG_VENDOR_SMARTISAN
+&dsi_ft8716_1080p_vid {
+	qcom,mdss-dsi-panel-timings-phy-v2 = [23 1e 07 08 05 03 04 a0
+		23 1e 07 08 05 03 04 a0
+		23 1e 07 08 05 03 04 a0
+		23 1e 07 08 05 03 04 a0
+		23 18 07 08 05 03 04 a0];
+};
+
+&dsi_td4310_1080p_vid {
+	qcom,mdss-dsi-panel-timings-phy-v2 = [24 1f 08 09 05 03 04 a0
+		24 1f 08 09 05 03 04 a0
+		24 1f 08 09 05 03 04 a0
+		24 1f 08 09 05 03 04 a0
+		24 1b 08 09 05 03 04 a0];
+	qcom,esd-check-enabled;
+	qcom,mdss-dsi-panel-status-check-mode = "reg_read";
+	qcom,mdss-dsi-panel-status-command = [06 01 00 01 00 00 01 0a];
+	qcom,mdss-dsi-panel-status-command-state = "dsi_hs_mode";
+	qcom,mdss-dsi-panel-status-value = <0x1c>;
+	qcom,mdss-dsi-panel-on-check-value = <0x1c>;
+	qcom,mdss-dsi-panel-status-read-length = <1>;
+};
+
+&dsi_txd_td4310_1080p_vid {
+	qcom,mdss-dsi-panel-timings-phy-v2 = [25 1f 09 0a 06 03 04 a0
+		24 1f 09 0a 06 03 04 a0
+		24 1f 09 0a 06 03 04 a0
+		24 1f 09 0a 06 03 04 a0
+		25 1d 08 0a 06 03 04 a0];
+	qcom,esd-check-enabled;
+	qcom,mdss-dsi-panel-status-check-mode = "reg_read";
+	qcom,mdss-dsi-panel-status-command = [06 01 00 01 00 00 01 0a];
+	qcom,mdss-dsi-panel-status-command-state = "dsi_hs_mode";
+	qcom,mdss-dsi-panel-status-value = <0x1c>;
+	qcom,mdss-dsi-panel-on-check-value = <0x1c>;
+	qcom,mdss-dsi-panel-status-read-length = <1>;
+};
+
+&dsi_boe_td4310_1080p_vid {
+	qcom,mdss-dsi-panel-timings-phy-v2 = [25 1f 09 0a 06 03 04 a0
+		25 1f 09 0a 06 03 04 a0
+		25 1f 09 0a 06 03 04 a0
+		25 1f 09 0a 06 03 04 a0
+		25 1d 08 0a 06 03 04 a0];
+	qcom,esd-check-enabled;
+	qcom,mdss-dsi-panel-status-check-mode = "reg_read";
+	qcom,mdss-dsi-panel-status-command = [06 01 00 01 00 00 01 0a];
+	qcom,mdss-dsi-panel-status-command-state = "dsi_hs_mode";
+	qcom,mdss-dsi-panel-status-value = <0x1c>;
+	qcom,mdss-dsi-panel-on-check-value = <0x1c>;
+	qcom,mdss-dsi-panel-status-read-length = <1>;
+};
+#endif

@@ -2238,6 +2238,17 @@
 };
 
 &pm660l_gpios {
+#ifdef CONFIG_VENDOR_SMARTISAN
+	gpio@c500 {
+		status = "okay";
+		qcom,mode = <0>;
+		qcom,pull = <0>;
+		qcom,vin-sel = <0>;
+		qcom,src-sel = <0>;
+		qcom,out-strength = <1>;
+	};
+#endif
+
 	/* GPIO 7 for VOL_UP */
 	gpio@c600 {
 		status = "okay";
@@ -2258,6 +2269,7 @@
 		pinctrl-0 = <&gpio_key_active>;
 		pinctrl-1 = <&gpio_key_suspend>;
 
+#ifndef CONFIG_VENDOR_SMARTISAN
 		camera_focus {
 			label = "camera_focus";
 			gpios = <&tlmm 64 0x1>;
@@ -2282,6 +2294,7 @@
 			gpio-key,wakeup;
 			debounce-interval = <15>;
 		};
+#endif
 	};
 
 	devfreq_spdm_cpu {
@@ -2289,3 +2302,7 @@
 		qcom,max-vote = <6750>;
 	};
 };
+
+#ifdef CONFIG_VENDOR_SMARTISAN
+#include "oscar-fingerprint.dtsi"
+#endif
